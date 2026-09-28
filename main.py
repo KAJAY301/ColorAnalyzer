@@ -2,6 +2,7 @@ import sys
 import cv2
 import numpy as np
 
+from PIL import Image
 from pathlib import Path
 from collections import Counter
 
@@ -171,6 +172,79 @@ def hsv_distance(point_a, point_b, h_weight = 10) -> int:
     d = dh * h_weight + ds * 1 + dv * 1
 
     return d
+
+def generate_palette(pixels, color_count):
+    """
+    Generate representative colors and pixel counts.
+
+    Args:
+        pixels: HSV pixels, shape (N, 3)
+        color_count: int
+
+    Returns:
+        palette_data: list of dict{"index", "hsv", "rgb", "count", "percentage"}
+    """
+
+    max_samples = 50000
+    if len(pixels) > max_samples:
+        indices = np.random.choice(len(pixels), max_samples, replace=False)
+        sample = pixels[indices]
+    else:
+        sample = pixels
+    sample = np.float32(sample)
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
+
+    _, labels, centers = cv2.kmeans(
+        sample,
+        color_count,
+        None,
+        criteria,
+        3,
+        cv2.KMEANS_PP_CENTERS
+    )
+
+    # KMeans centers
+    palette = np.uint8(centers)
+
+    # 
+    pixels_float = np.float32(pixels)
+
+    # HSV distances
+    distances = np.linalg.norm(
+        pixels_float[:, None, :] - centers[None, :, :],
+        axis=2
+    )
+
+    pixel_labels = np.argmin(distances, axis=1)
+
+    counts = np.bincount(pixel_labels, minlength=color_count)
+
+    total = len(pixels)
+
+    palette_data = []
+
+    for i in range(color_count):
+        hsv = palette[i]
+        # HSV → RGB
+        hsv_pixel = np.array([[hsv]], dtype=np.uint8)
+
+        rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0]
+
+        palette_data.append({
+            "index": i,
+            "hsv": tuple(int(x) for x in hsv),
+            "rgb": tuple(int(x) for x in rgb),
+            "count": int(counts[i]),
+            "percentage": counts[i] / total * 100
+        })
+
+    # sort 
+    palette_data.sort(key=lambda x: x["count"], reverse=True)
+
+    processed_pixels = palette[pixel_labels]
+
+    return palette_data, processed_pixels
 
 # ===============================================================
 #                           UI
@@ -439,40 +513,16 @@ class ColorAnalyzer(QWidget):
             return
         color_number = how_many_color + 1
 
-        # Find most common color
-        pre_color_count = Counter(map(tuple, self.pixels))
-        color_count = {}
+        # Kmean and Find most common color
+        palette_data, palette_pixels = generate_palette(self.pixels, color_count=color_number)
 
-        for color, count in pre_color_count.most_common():
-            color = tuple(map(int, color))
-            too_close = False
-            for selected_color in color_count:
-                d = hsv_distance(color, selected_color)
-                if d < 10:
-                    too_close = True
-                    break
-            if too_close:
-                continue
-
-            color_count[color] = 0
-
-            if len(color_count) >= color_number:
-                break
-        #DEBUG
-        #print(color_count)
-
-        # Count color, get result pixels
-        color_count, result_pixels = count_color(self.pixels, color_count)
-
-        # Sort from many to few
-        sorted_colors = sorted(color_count.items(), key=lambda x: x[1], reverse=True)
-
+        # clear table
         self.table.setRowCount(0)
 
         name_count = {}
-        for color, count in sorted_colors:
+        for data in palette_data:
             # Name
-            name = hsv_to_name(color)
+            name = hsv_to_name(data['hsv'])
             # make sure there is no the same name
             if name in name_count:
                 name_count[name] += 1
@@ -482,7 +532,7 @@ class ColorAnalyzer(QWidget):
                 display_name = name
 
             # Percentage
-            percentage = (count / self.pixels.shape[0] * 100)
+            percentage = data['percentage']
 
             # show on table
             row = self.table.rowCount()
@@ -490,7 +540,7 @@ class ColorAnalyzer(QWidget):
 
             # color
             color_widget = QWidget()
-            rgb = self.hsv_to_rgb(color)
+            rgb = data['rgb']
             color_widget.setStyleSheet(
                 f"background-color: rgb({rgb[0]},{rgb[1]},{rgb[2]});"
             )
@@ -507,12 +557,12 @@ class ColorAnalyzer(QWidget):
             self.table.setItem(row, 2, percentage_item)
 
             # Count
-            count_item = QTableWidgetItem(str(count))
+            count_item = QTableWidgetItem(str(data['count']))
             count_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 3, count_item)
 
         # Image
-        self.show_processed_image(result_pixels)
+        self.show_processed_image(palette_pixels)
 
     def show_processed_image(self, result_pixels):
 

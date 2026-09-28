@@ -69,5 +69,4 @@ The application converts the input image (or each PDF page) to HSV color space, 
 - main.py — main application entry point and UI logic
 - requirements.txt — Python dependencies
 - run.bat — Windows shortcut for launching the app
-- config.json — optional configuration file placeholder
 
