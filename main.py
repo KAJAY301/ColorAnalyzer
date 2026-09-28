@@ -179,24 +179,77 @@ def generate_palette(pixels, color_count):
 
     Args:
         pixels: HSV pixels, shape (N, 3)
+                OpenCV HSV:
+                    H: 0 ~ 179
+                    S: 0 ~ 255
+                    V: 0 ~ 255
         color_count: int
 
     Returns:
-        palette_data: list of dict{"index", "hsv", "rgb", "count", "percentage"}
-    """
+        palette_data:
+            list of dict{
+                "index",
+                "hsv",
+                "rgb",
+                "count",
+                "percentage"
+            }
 
-    max_samples = 50000
+        processed_pixels:
+            HSV pixels after replacing each pixel
+            with its representative palette color.
+    """
+    # 1. Sample pixels for KMeans
+    max_samples = 500000
+
     if len(pixels) > max_samples:
-        indices = np.random.choice(len(pixels), max_samples, replace=False)
+        indices = np.random.choice(
+            len(pixels),
+            max_samples,
+            replace=False
+        )
         sample = pixels[indices]
     else:
         sample = pixels
+
     sample = np.float32(sample)
 
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
+    # 2. Convert HSV -> custom KMeans feature space
+    #
+    # Feature:
+    #   X = cos(H)
+    #   Y = sin(H)
+    #   Z = S * V / 255 / 255
+    #   W = V / 255
+    #
+    # This makes:
+    #   H=0 and H=179 close to each other
+    #
+    # S is affected by V:
+    #   low V -> lower influence from S
+
+    H = sample[:, 0]
+    S = sample[:, 1]
+    V = sample[:, 2]
+
+    features = np.column_stack([
+        np.cos(2 * np.pi * H / 180) * (V / 255),
+        np.sin(2 * np.pi * H / 180) * (V / 255),
+        (S * V / 255) / 255,
+        V / 255
+    ]).astype(np.float32)
+
+
+    # 3. KMeans
+    criteria = (
+        cv2.TERM_CRITERIA_EPS +
+        cv2.TERM_CRITERIA_MAX_ITER,
+        50,
+        0.2
+    )
 
     _, labels, centers = cv2.kmeans(
-        sample,
+        features,
         color_count,
         None,
         criteria,
@@ -204,31 +257,78 @@ def generate_palette(pixels, color_count):
         cv2.KMEANS_PP_CENTERS
     )
 
-    # KMeans centers
-    palette = np.uint8(centers)
+    # centers shape:
+    # (color_count, 4)
+    # center = [cosH, sinH, SV, V]
 
-    # 
-    pixels_float = np.float32(pixels)
+    # 4. Convert all original pixels to the same feature space
+    pixels = np.float32(pixels)
 
-    # HSV distances
+    H = pixels[:, 0]
+    S = pixels[:, 1]
+    V = pixels[:, 2]
+
+    pixels_features = np.column_stack([
+        np.cos(2 * np.pi * H / 180) * (V / 255),
+        np.sin(2 * np.pi * H / 180) * (V / 255),
+        (S * V / 255) / 255,
+        V / 255
+    ]).astype(np.float32)
+
+    # 5. Calculate distance in custom feature space
     distances = np.linalg.norm(
-        pixels_float[:, None, :] - centers[None, :, :],
+        pixels_features[:, None, :] -
+        centers[None, :, :],
         axis=2
     )
-
     pixel_labels = np.argmin(distances, axis=1)
 
+    # 6. Count pixels
     counts = np.bincount(pixel_labels, minlength=color_count)
-
     total = len(pixels)
 
-    palette_data = []
+    # 7. Convert KMeans centers
+    # (cosH, sinH, SV, V) -> (H, S, V)
+    palette_hsv = []
+    for center in centers:
+        cos_h = float(center[0])
+        sin_h = float(center[1])
+        sv_feature = float(center[2])
+        v_feature = float(center[3])
 
+        # H
+        H = np.degrees(np.arctan2(sin_h, cos_h)) / 2.0
+        H %= 180.0
+
+        # V
+        V = v_feature * 255.0
+        V = np.clip(V, 0, 255)
+
+        # S
+        if V > 1e-6:
+            S = sv_feature * 255.0 * 255.0 / V
+        else:
+            S = 0.0
+
+        S = np.clip( S, 0, 255)
+
+        palette_hsv.append([H, S, V])
+
+    palette_hsv = np.array(palette_hsv, dtype=np.float32)
+
+    # OpenCV HSV uint8
+    palette = np.clip(
+        palette_hsv,
+        [0, 0, 0],
+        [179, 255, 255]
+    ).astype(np.uint8)
+
+    # 8. Generate palette data
+    palette_data = []
     for i in range(color_count):
         hsv = palette[i]
-        # HSV → RGB
+        # HSV -> RGB
         hsv_pixel = np.array([[hsv]], dtype=np.uint8)
-
         rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0]
 
         palette_data.append({
@@ -236,12 +336,16 @@ def generate_palette(pixels, color_count):
             "hsv": tuple(int(x) for x in hsv),
             "rgb": tuple(int(x) for x in rgb),
             "count": int(counts[i]),
-            "percentage": counts[i] / total * 100
+            "percentage": float(counts[i] / total * 100)
         })
 
-    # sort 
-    palette_data.sort(key=lambda x: x["count"], reverse=True)
+    # 9. Sort by pixel count
+    palette_data.sort(
+        key=lambda x: x["count"],
+        reverse=True
+    )
 
+    # 10. Replace every pixel with its representative HSV
     processed_pixels = palette[pixel_labels]
 
     return palette_data, processed_pixels
@@ -502,7 +606,6 @@ class ColorAnalyzer(QWidget):
     def analyze(self):
 
         text = self.color_input.text().strip()
-
         # Check if input is int
         try:
             how_many_color = int(text)
