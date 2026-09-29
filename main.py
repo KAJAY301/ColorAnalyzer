@@ -79,22 +79,67 @@ def hsv_to_name(hsv_pixel):
 
     return color_name
 
-def count_color(pixels, all_color):
-    result = np.zeros_like(pixels)
+def count_color(pixels, all_color, batch_size=100000):
+    original_dtype = np.asarray(pixels).dtype
+    pixels = np.asarray(pixels, dtype=np.float32)
+    colors = np.asarray(list(all_color.keys()), dtype=np.float32)
 
-    for i, pixel in enumerate(pixels):
-        min_dist = float("inf")
-        closest_color = None
+    H_weight = 1.0
+    V_weight = 2.0
+    weight = math.sqrt(H_weight**2 + V_weight**2)
 
-        for color in all_color:
-            d = hsv_distance(pixel, color)
+    # 預先計算 color 座標
+    H = colors[:, 0]
+    S = colors[:, 1] / 255.0
+    V = colors[:, 2] / 255.0
 
-            if d < min_dist:
-                min_dist = d
-                closest_color = color
+    angle = 2.0 * np.pi * H / 180.0
 
-        all_color[closest_color] += 1
-        result[i] = closest_color
+    color_x = np.cos(angle) * S * V * H_weight
+    color_y = np.sin(angle) * S * V * H_weight
+    color_z = V * V_weight
+
+    result = np.empty(pixels.shape, dtype=original_dtype)
+
+    total_counts = np.zeros(len(colors), dtype=np.int64)
+
+    for start in range(0, len(pixels), batch_size):
+
+        end = min(start + batch_size, len(pixels))
+
+        batch = pixels[start:end]
+
+        H = batch[:, 0]
+        S = batch[:, 1] / 255.0
+        V = batch[:, 2] / 255.0
+
+        angle = 2.0 * np.pi * H / 180.0
+
+        pixel_x = np.cos(angle) * S * V * H_weight
+        pixel_y = np.sin(angle) * S * V * H_weight
+        pixel_z = V * V_weight
+
+        dx = pixel_x[:, None] - color_x[None, :]
+        dy = pixel_y[:, None] - color_y[None, :]
+        dz = pixel_z[:, None] - color_z[None, :]
+
+        distance = np.sqrt(
+            dx * dx +
+            dy * dy +
+            dz * dz
+        )
+
+        closest_index = np.argmin(distance, axis=1)
+
+        result[start:end] = colors[closest_index].astype(original_dtype)
+
+        total_counts += np.bincount(
+            closest_index,
+            minlength=len(colors)
+        )
+
+    for i, color in enumerate(all_color.keys()):
+        all_color[color] += int(total_counts[i])
 
     return all_color, result
 
