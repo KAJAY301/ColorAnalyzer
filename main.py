@@ -1,5 +1,6 @@
 import sys
 import cv2
+import math
 import numpy as np
 
 from pathlib import Path
@@ -160,17 +161,36 @@ def load_pixels(file_path):
     pixels = hsv.reshape(-1, 3)
     return (pixels, image)
 
-def hsv_distance(point_a, point_b, h_weight = 10) -> int:
-    """Calculate distance between two hsv number in a corn shape model"""
-    dh = abs(int(point_a[0]) - int(point_b[0]))
-    ds = abs(int(point_a[1])*int(point_a[2])/255 - int(point_b[1])*int(point_b[2])/255)
-    dv = abs(int(point_a[2]) - int(point_b[2]))
+def hsv_distance(point_a, point_b) -> float:
+    """Calculate distance between two HSV colors using a cone-shaped model."""
 
-    dh = min(dh, 180 - dh)
+    H1, S1, V1 = map(int, point_a)
+    H2, S2, V2 = map(int, point_b)
+    H_weight, V_weight = 1.0, 2.0
+    weight = math.sqrt(H_weight**2 + V_weight**2)
 
-    d = dh * h_weight + ds * 1 + dv * 1
+    # OpenCV H: 0 ~ 179
+    angle1 = 2.0 * math.pi * H1 / 180.0
+    angle2 = 2.0 * math.pi * H2 / 180.0
 
-    return d
+    # HSV -> cone coordinates
+    x1 = math.cos(angle1) * S1/255 * V1/255 * H_weight
+    y1 = math.sin(angle1) * S1/255 * V1/255 * H_weight
+    z1 = V1 / 255                           * V_weight
+
+    x2 = math.cos(angle2) * S2/255 * V2/255 * H_weight
+    y2 = math.sin(angle2) * S2/255 * V2/255 * H_weight
+    z2 = V2 / 255                           * V_weight
+
+    # Euclidean distance
+    distance = math.sqrt(
+        (x1 - x2) ** 2 +
+        (y1 - y2) ** 2 +
+        (z1 - z2) ** 2
+    )
+    # distance: 0 ~ weight
+    # return 0 ~ 255
+    return round(distance / weight * 255)
 
 # ===============================================================
 #                           UI
