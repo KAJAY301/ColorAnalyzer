@@ -1,3 +1,4 @@
+import os
 import sys
 import cv2
 import math
@@ -6,8 +7,8 @@ import numpy as np
 from pathlib import Path
 from collections import Counter
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence, QIcon
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -233,6 +234,14 @@ def hsv_distance(point_a, point_b) -> float:
     # distance: 0 ~ weight
     # return 0 ~ 255
     return round(distance / weight * 255)
+
+def resource_path(filename):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, filename)
 
 # ===============================================================
 #                           UI
@@ -491,11 +500,37 @@ class ColorAnalyzer(QWidget):
         # ROI
 
         # Rotate
-        rotate_button = QPushButton("↷ 旋轉")
+        rotate_button = QPushButton()
+        rotate_icon = QIcon(resource_path("resources/rotate.png"))
+        rotate_button.setIcon(rotate_icon)
+        rotate_button.setIconSize(QSize(29, 29))
+        rotate_button.setToolTip("Rotate")
+        rotate_button.setStyleSheet("""
+            QPushButton { 
+                padding: 0px;
+                border-radius: 0px;
+            }
+            QPushButton:hover { 
+                background-color: #CCCCCC; 
+            }
+        """)
         rotate_button.clicked.connect(self.rotate)
 
         # Mirror
-        mirror_button = QPushButton("↔ 鏡像")
+        mirror_button = QPushButton()
+        mirror_icon = QIcon(resource_path("resources/mirror.png"))
+        mirror_button.setIcon(mirror_icon)
+        mirror_button.setIconSize(QSize(29, 29))
+        mirror_button.setToolTip("Mirror")
+        mirror_button.setStyleSheet("""
+            QPushButton { 
+                padding: 0px;
+                border-radius: 0px;
+            }
+            QPushButton:hover { 
+                background-color: #CCCCCC; 
+            }
+        """)
         mirror_button.clicked.connect(self.mirror_horizontal)
 
         tool_layout.addWidget(rotate_button)
