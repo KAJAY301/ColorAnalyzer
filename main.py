@@ -241,6 +241,17 @@ class CopyableTableWidget(QTableWidget):
     def __init__(self):
         super().__init__()
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setColumnCount(4)
+        self.setHorizontalHeaderLabels(["色塊", "名稱", "比例", "總數"])
+        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.setColumnWidth(0, 80)
+        
+        self.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(2,QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(3,QHeaderView.Stretch)
+        
+        self.setSelectionMode(QTableWidget.ExtendedSelection)
+        self.setSelectionBehavior(QTableWidget.SelectItems)
 
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.Copy):
@@ -275,6 +286,7 @@ class CopyableTableWidget(QTableWidget):
 class ImageViewer(QLabel):
     def __init__(self):
         super().__init__()
+        
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(400, 400)
         self.setStyleSheet(
@@ -292,7 +304,11 @@ class ImageViewer(QLabel):
     # Set Image
     def set_image(self, pixmap):
         self.pixmap_original = pixmap
-        self.scale = 1.0
+
+        w = pixmap.width()
+        h = pixmap.height()
+        self.scale = min(self.width()/w , self.height()/h)
+
         self.offset_x = 0
         self.offset_y = 0
         self.update_image()
@@ -419,6 +435,7 @@ class ColorAnalyzer(QWidget):
             self.original_image = image
 
         self.init_ui()
+        self.show_image(self.pixels)
 
     def init_ui(self):
 
@@ -461,29 +478,10 @@ class ColorAnalyzer(QWidget):
 
         # Table
         self.table = CopyableTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["色塊", "名稱", "比例", "總數"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 80)
-
-        self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3,QHeaderView.Stretch)
-
-        self.table.setSelectionMode(QTableWidget.ExtendedSelection)
-        self.table.setSelectionBehavior(QTableWidget.SelectItems)
         data_layout.addWidget(self.table)
 
         # Image
         self.image_label = ImageViewer()
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMinimumSize(400, 400)
-        self.image_label.setStyleSheet(
-            """
-            background-color: #eeeeee;
-            border: 1px solid #cccccc;
-            """
-        )
         image_layout.addWidget(self.image_label)
         self.setLayout(main_layout)
 
@@ -528,7 +526,6 @@ class ColorAnalyzer(QWidget):
                 reverse=True
             )[:color_number]
         )
-        print(color_count)
 
         # Count color, get result pixels
         color_count, result_pixels = count_color(self.pixels, color_count)
@@ -581,10 +578,10 @@ class ColorAnalyzer(QWidget):
             self.table.setItem(row, 3, count_item)
 
         # Image
-        self.show_processed_image(result_pixels)
+        self.show_image(result_pixels)
 
-    def show_processed_image(self, result_pixels):
-
+    def show_image(self, result_pixels):
+        """show [(h, s, v)] as qimage"""
         # Reshape
         height, width = (self.original_image.shape[:2])
         result_hsv = result_pixels.reshape(height,width,3)
