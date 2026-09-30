@@ -7,8 +7,17 @@ import numpy as np
 from pathlib import Path
 from collections import Counter
 
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence, QIcon
+from PyQt5.QtCore import Qt, QSize, QRect, QPoint
+from PyQt5.QtGui import (
+    QPixmap, 
+    QImage, 
+    QPainter, 
+    QKeySequence, 
+    QIcon, 
+    QPainter, 
+    QPen, 
+    QColor,
+)
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -304,11 +313,34 @@ class ImageViewer(QLabel):
             border: 1px solid #cccccc;
             """
         )
+
         self.pixmap_original = None
         self.scale = 1.0
         self.offset_x = 0
         self.offset_y = 0
         self.last_pos = None
+
+        self.roi_is_on = False
+        self.roi_start = None
+        self.roi_end = None
+
+    def set_roi_mode(self, toggle):
+        if not self.roi_is_on:
+            self.roi_is_on = True
+        else:
+            self.roi_is_on = False
+
+        if self.roi_is_on:
+            self.roi_start = QPoint(self.x, self.y)
+            self.roi_end = QPoint(
+                int(-self.x + self.width()  + 2*self.offset_x),
+                int(-self.y + self.height() + 2*self.offset_y)
+            )
+        else:
+            self.roi_start = None
+            self.roi_end = None
+            
+        self.update()
 
     # Set Image
     def set_image(self, pixmap, fixed_view):
@@ -400,6 +432,34 @@ class ImageViewer(QLabel):
         self.update_image()
         super().resizeEvent(event)
 
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        if self.roi_is_on and self.roi_start and self.roi_end:
+            painter = QPainter(self)
+            rect = QRect(self.roi_start, self.roi_end).normalized()
+
+            # Darker outside
+            painter.setBrush(QColor(0, 0, 0, 100))
+            painter.setPen(Qt.NoPen)
+
+            # Top
+            painter.drawRect(0, 0, self.width(), rect.top())
+            # Bottom
+            painter.drawRect(0, rect.bottom()+1, self.width(), self.height() - rect.bottom())
+            # Left
+            painter.drawRect(0,rect.top(),rect.left(),rect.height())
+            # Right
+            painter.drawRect(rect.right(), rect.top(), self.width() - rect.right(), rect.height())
+
+            # ROI Area
+            pen = QPen(Qt.black)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect)
+            painter.end()
+
     #  Update Image
     def update_image(self):
         if self.pixmap_original is None:
@@ -418,13 +478,18 @@ class ImageViewer(QLabel):
 
         # Painter
         painter = QPainter(canvas)
-        x = int((self.width() - pixmap.width()) // 2 + self.offset_x)
-        y = int((self.height() - pixmap.height()) // 2 + self.offset_y)
+        self.x = int((self.width() - pixmap.width()) // 2 + self.offset_x)
+        self.y = int((self.height() - pixmap.height()) // 2 + self.offset_y)
         
-        painter.drawPixmap(x, y, pixmap)
+        painter.drawPixmap(self.x, self.y, pixmap)
         painter.end()
 
         self.setPixmap(canvas)
+
+        if self.roi_is_on:
+            self.roi_start = QPoint(self.x, self.y)
+            self.roi_end = QPoint(self.x+pixmap.width(), self.y+pixmap.height())
+
 
 class ColorAnalyzer(QWidget):
     def __init__(self, image_path = None):
@@ -494,10 +559,28 @@ class ColorAnalyzer(QWidget):
         self.table = CopyableTableWidget()
         data_layout.addWidget(self.table)
 
+        # Image
+        self.image_label = ImageViewer()
+
         # Tool bar
         tool_layout = QHBoxLayout()
         
-        # ROI
+        # Select
+        select_button = QPushButton()
+        select_icon = QIcon(resource_path("resources/select.png"))
+        select_button.setIcon(select_icon)
+        select_button.setIconSize(QSize(29, 29))
+        select_button.setToolTip("Select")
+        select_button.setStyleSheet("""
+            QPushButton { 
+                padding: 0px;
+                border-radius: 0px;
+            }
+            QPushButton:hover { 
+                background-color: #CCCCCC; 
+            }
+        """)
+        select_button.clicked.connect(lambda: self.image_label.set_roi_mode(True))
 
         # Rotate
         rotate_button = QPushButton()
@@ -533,15 +616,16 @@ class ColorAnalyzer(QWidget):
         """)
         mirror_button.clicked.connect(self.mirror_horizontal)
 
+        tool_layout.addWidget(select_button)
         tool_layout.addWidget(rotate_button)
         tool_layout.addWidget(mirror_button)
         tool_layout.addStretch()
-        
-        image_layout.addLayout(tool_layout)
 
-        # Image
-        self.image_label = ImageViewer()
+        # Add layout (image layout)
+        image_layout.addLayout(tool_layout)
         image_layout.addWidget(self.image_label)
+
+        
 
         # set main layout
         self.setLayout(main_layout)
@@ -570,7 +654,7 @@ class ColorAnalyzer(QWidget):
 
             for selected_color in grouped_count:
                 d = hsv_distance(color, selected_color)
-                if d < 30:
+                if d < 20:
                     matched_color = selected_color
                     break
 
