@@ -22,39 +22,36 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
 )
-# ===============================================================
-#                           Dictionary
-# ===============================================================
-color_h_dist = {
-    "紅色": 0,
-    "橘色": 15,
-    "黃色": 30,
-    "萊姆綠": 45,
-    "綠色": 60,
-    "春綠色": 75,
-    "青色": 90,
-    "天藍色": 105,
-    "藍色": 120,
-    "紫色": 135,
-    "洋紅色": 150,
-    "玫瑰紅": 165,
-}
 
 # ===============================================================
 #                           Util
 # ===============================================================
 def hsv_to_name(hsv_pixel):
+    color_h_dist = {
+        "紅色": 0,
+        "橘色": 15,
+        "黃色": 30,
+        "萊姆綠": 45,
+        "綠色": 60,
+        "春綠色": 75,
+        "青色": 90,
+        "天藍色": 105,
+        "藍色": 120,
+        "紫色": 135,
+        "洋紅色": 150,
+        "玫瑰紅": 165,
+    }
     h, s, v = hsv_pixel
 
     # Black Gray White
-    if v <= 10:
+    if v <= 30:
         return "黑色"
-    if s <= 20:
-        if v <= 25:
+    if s <= 50:
+        if v <= 65:
             return "深灰色"
-        if v <= 50:
+        if v <= 130:
             return "灰色"
-        if v <= 80:
+        if v <= 205:
             return "淺灰色"
         return "白色"
 
@@ -71,10 +68,10 @@ def hsv_to_name(hsv_pixel):
     color_name = best_color
 
     # Dark or light
-    if s < 60 and v < 50:
-        if v > s - 10:
+    if s < 150 and v < 130:
+        if v > s - 25:
             color_name = "淺" + color_name
-        elif v < s - 10:
+        elif v < s - 25:
             color_name = "深" + color_name
 
     return color_name
@@ -504,27 +501,34 @@ class ColorAnalyzer(QWidget):
             return
         color_number = how_many_color + 1
 
-        # Find most common color
+        # Group simular color 
         pre_color_count = Counter(map(tuple, self.pixels))
-        color_count = {}
+        grouped_count = {}
 
         for color, count in pre_color_count.most_common():
             color = tuple(map(int, color))
-            too_close = False
-            for selected_color in color_count:
+            matched_color = None
+
+            for selected_color in grouped_count:
                 d = hsv_distance(color, selected_color)
-                if d < 10:
-                    too_close = True
+                if d < 30:
+                    matched_color = selected_color
                     break
-            if too_close:
-                continue
 
-            color_count[color] = 0
+            if matched_color is not None:
+                grouped_count[matched_color] += count
+            else:
+                grouped_count[color] = count
 
-            if len(color_count) >= color_number:
-                break
-        #DEBUG
-        #print(color_count)
+        # Sort the most common color
+        color_count = dict(
+            sorted(
+                grouped_count.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:color_number]
+        )
+        print(color_count)
 
         # Count color, get result pixels
         color_count, result_pixels = count_color(self.pixels, color_count)
