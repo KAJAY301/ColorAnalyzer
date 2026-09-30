@@ -96,7 +96,7 @@ def count_color(pixels, all_color, batch_size=100000):
     color_y = np.sin(angle) * S * V * H_weight
     color_z = V * V_weight
 
-    result = np.empty(pixels.shape, dtype=original_dtype)
+    result_pixels = np.empty(pixels.shape, dtype=original_dtype)
 
     total_counts = np.zeros(len(colors), dtype=np.int64)
 
@@ -128,7 +128,7 @@ def count_color(pixels, all_color, batch_size=100000):
 
         closest_index = np.argmin(distance, axis=1)
 
-        result[start:end] = colors[closest_index].astype(original_dtype)
+        result_pixels[start:end] = colors[closest_index].astype(original_dtype)
 
         total_counts += np.bincount(
             closest_index,
@@ -138,7 +138,7 @@ def count_color(pixels, all_color, batch_size=100000):
     for i, color in enumerate(all_color.keys()):
         all_color[color] += int(total_counts[i])
 
-    return all_color, result
+    return all_color, result_pixels
 
 def load_pixels(file_path):
     """
@@ -302,15 +302,16 @@ class ImageViewer(QLabel):
         self.last_pos = None
 
     # Set Image
-    def set_image(self, pixmap):
+    def set_image(self, pixmap, fixed_view):
         self.pixmap_original = pixmap
 
-        w = pixmap.width()
-        h = pixmap.height()
-        self.scale = min(self.width()/w , self.height()/h)
+        if not fixed_view:
+            w = pixmap.width()
+            h = pixmap.height()
+            self.scale = min(self.width()/w , self.height()/h)
 
-        self.offset_x = 0
-        self.offset_y = 0
+            self.offset_x = 0
+            self.offset_y = 0
         self.update_image()
 
     # Zoom
@@ -422,7 +423,7 @@ class ColorAnalyzer(QWidget):
         super().__init__()
 
         self.pixels = None
-        self.original_image = None
+        self.showed_image = None
 
         if image_path:
             try:
@@ -432,10 +433,14 @@ class ColorAnalyzer(QWidget):
                 sys.exit(1)
 
             self.pixels = pixels
-            self.original_image = image
+            self.showed_image = image
+            self.image_height = image.shape[0]
+            self.image_width = image.shape[1]
+            self.original_image_height = image.shape[0]
+            self.original_image_width = image.shape[1]
 
         self.init_ui()
-        self.show_image(self.pixels)
+        self.show_image(fixed_view=False)
 
     def init_ui(self):
 
@@ -480,9 +485,30 @@ class ColorAnalyzer(QWidget):
         self.table = CopyableTableWidget()
         data_layout.addWidget(self.table)
 
+        # Tool bar
+        tool_layout = QHBoxLayout()
+        
+        # ROI
+
+        # Rotate
+        rotate_button = QPushButton("↷ 旋轉")
+        rotate_button.clicked.connect(self.rotate)
+
+        # Mirror
+        mirror_button = QPushButton("↔ 鏡像")
+        mirror_button.clicked.connect(self.mirror_horizontal)
+
+        tool_layout.addWidget(rotate_button)
+        tool_layout.addWidget(mirror_button)
+        tool_layout.addStretch()
+        
+        image_layout.addLayout(tool_layout)
+
         # Image
         self.image_label = ImageViewer()
         image_layout.addWidget(self.image_label)
+
+        # set main layout
         self.setLayout(main_layout)
 
     def analyze(self):
@@ -578,29 +604,48 @@ class ColorAnalyzer(QWidget):
             self.table.setItem(row, 3, count_item)
 
         # Image
-        self.show_image(result_pixels)
+        # result_pixels to result_image
+        cv2_hsv = result_pixels.reshape(self.original_image_height, self.original_image_width, 3)
+        cv2_bgr = cv2.cvtColor(cv2_hsv, cv2.COLOR_HSV2BGR)
+        self.showed_image = cv2_bgr
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image(fixed_view=False)
 
-    def show_image(self, result_pixels):
-        """show [(h, s, v)] as qimage"""
-        # Reshape
-        height, width = (self.original_image.shape[:2])
-        result_hsv = result_pixels.reshape(height,width,3)
+    def rotate(self):
+        cv2_bgr = self.showed_image
+        rotated_image = cv2.rotate(cv2_bgr, cv2.ROTATE_90_CLOCKWISE)
+        self.showed_image = rotated_image
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image()
 
-        # HSV -> BGR -> Array
-        result_bgr = cv2.cvtColor(result_hsv,cv2.COLOR_HSV2BGR)
-        result_bgr = np.ascontiguousarray(result_bgr)
+    def mirror_horizontal(self):
+        cv2_bgr = self.showed_image
+        mirrored_image = cv2.flip(cv2_bgr, 1)
+        self.showed_image = mirrored_image
+        #self.image_height = self.showed_image.shape[0]
+        #self.image_width = self.showed_image.shape[1]
+        self.show_image()
+
+
+    def show_image(self, fixed_view=True):
+        """show image"""
+        # self.showed_image is a cv2 BGR image
+        # BGR -> Array
+        result_bgr = np.ascontiguousarray(self.showed_image)
 
         qimage = QImage(
             result_bgr.data,
-            width,
-            height,
+            self.image_width,
+            self.image_height,
             result_bgr.strides[0],
             QImage.Format_BGR888
         ).copy()
 
         pixmap = QPixmap.fromImage(qimage)
 
-        self.image_label.set_image(pixmap)
+        self.image_label.set_image(pixmap, fixed_view=fixed_view)
 
     @staticmethod
     def hsv_to_rgb(hsv_color):
