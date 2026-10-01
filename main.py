@@ -304,13 +304,15 @@ class CopyableTableWidget(QTableWidget):
 class ImageViewer(QLabel):
     def __init__(self):
         super().__init__()
+
+        self.setMouseTracking(True)
         
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(400, 400)
         self.setStyleSheet(
             """
             background-color: #eeeeee;
-            border: 1px solid #cccccc;
+            border: 0px;
             """
         )
 
@@ -323,6 +325,10 @@ class ImageViewer(QLabel):
         self.roi_is_on = False
         self.roi_start = None
         self.roi_end = None
+        self.roi_left_offset = 0
+        self.roi_top_offset = 0
+        self.roi_right_offset = 0
+        self.roi_bottom_offset = 0
 
     def set_roi_mode(self, toggle):
         if not self.roi_is_on:
@@ -342,7 +348,6 @@ class ImageViewer(QLabel):
             
         self.update()
 
-    # Set Image
     def set_image(self, pixmap, fixed_view):
         self.pixmap_original = pixmap
 
@@ -355,7 +360,6 @@ class ImageViewer(QLabel):
             self.offset_y = 0
         self.update_image()
 
-    # Zoom
     def wheelEvent(self, event):
         if self.pixmap_original is None:
             return
@@ -392,7 +396,6 @@ class ImageViewer(QLabel):
         new_width = (self.pixmap_original.width() * self.scale)
         new_height = (self.pixmap_original.height() * self.scale)
 
-
         # offset to fixed the zoom point
         new_x = (mouse_x - image_x * self.scale)
         new_y = (mouse_y - image_y * self.scale)
@@ -406,28 +409,111 @@ class ImageViewer(QLabel):
         # update
         self.update_image()
 
-    # Mouse Press
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.last_pos = event.pos()
 
-    # Mouse Move
-    def mouseMoveEvent(self, event):
-        if self.last_pos is not None and event.buttons() & Qt.LeftButton:
-            delta = event.pos() - self.last_pos
+            # Clear
+            self.on_top = False
+            self.on_bottom = False
+            self.on_left = False
+            self.on_right = False
 
+            # ROI 模式
+            if self.roi_is_on and self.roi_start and self.roi_end:
+
+                rect = QRect(self.roi_start, self.roi_end).normalized()
+
+                margin = 6
+
+                # Top / Bottom
+                self.on_top = rect.left() - margin <= event.pos().x() <= rect.right() + margin and abs(event.pos().y() - rect.top()) <= margin
+                self.on_bottom = rect.left() - margin <= event.pos().x() <= rect.right() + margin and abs(event.pos().y() - rect.bottom()) <= margin
+                # Left / Right
+                self.on_left = rect.top() - margin <= event.pos().y() <= rect.bottom() + margin and abs(event.pos().x() - rect.left()) <= margin
+                self.on_right = rect.top() - margin <= event.pos().y() <= rect.bottom() + margin and abs(event.pos().x() - rect.right()) <= margin
+
+
+    def update_cursor(self, pos):
+        if not self.roi_is_on or self.roi_start is None or self.roi_end is None:
+            self.setCursor(Qt.ArrowCursor)
+            return
+
+        rect = QRect(self.roi_start, self.roi_end).normalized()
+        margin = 6
+        # Top / Bottom / Left / Right
+        on_top = rect.left() - margin <= pos.x() <= rect.right() + margin and abs(pos.y() - rect.top()) <= margin
+        on_bottom = rect.left() - margin <= pos.x() <= rect.right() + margin and abs(pos.y() - rect.bottom()) <= margin
+        on_left = rect.top() - margin <= pos.y() <= rect.bottom() + margin and abs(pos.x() - rect.left()) <= margin
+        on_right = rect.top() - margin <= pos.y() <= rect.bottom() + margin and abs(pos.x() - rect.right()) <= margin
+
+        if on_top:
+            if on_left:
+                self.setCursor(Qt.SizeFDiagCursor)
+                return
+            elif on_right:
+                self.setCursor(Qt.SizeBDiagCursor)
+                return
+            else:
+                self.setCursor(Qt.SizeVerCursor)
+                return
+        elif on_bottom:
+            if on_left:
+                self.setCursor(Qt.SizeBDiagCursor)
+                return
+            elif on_right:
+                self.setCursor(Qt.SizeFDiagCursor)
+                return
+            else:
+                self.setCursor(Qt.SizeVerCursor)
+                return
+        elif on_left or on_right:
+            self.setCursor(Qt.SizeHorCursor)
+            return
+
+
+        # On image
+        self.setCursor(Qt.CrossCursor)
+
+    def mouseMoveEvent(self, event):
+
+        self.update_cursor(event.pos())
+
+        if self.last_pos is None:
+            return
+
+        delta = event.pos() - self.last_pos
+
+        # ROI
+        if self.roi_is_on:
+            moved = False
+            if self.on_top:
+                self.roi_top_offset += delta.y() / self.scale
+                moved = True
+            if self.on_bottom:
+                self.roi_bottom_offset += delta.y() / self.scale
+                moved = True
+            if self.on_left:
+                self.roi_left_offset += delta.x() / self.scale
+                moved = True
+            if self.on_right:
+                self.roi_right_offset += delta.x() / self.scale
+                moved = True
+            if not moved:
+                self.offset_x += delta.x()
+                self.offset_y += delta.y()
+        # Normal
+        elif event.buttons() & Qt.LeftButton:
             self.offset_x += delta.x()
             self.offset_y += delta.y()
-            self.last_pos = event.pos()
 
-            self.update_image()
+        self.last_pos = event.pos()
+        self.update_image()
 
-    # Mouse Release
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.last_pos = None
 
-    # Resize
     def resizeEvent(self, event):
         self.update_image()
         super().resizeEvent(event)
@@ -460,7 +546,6 @@ class ImageViewer(QLabel):
             painter.drawRect(rect)
             painter.end()
 
-    #  Update Image
     def update_image(self):
         if self.pixmap_original is None:
             return
@@ -487,8 +572,15 @@ class ImageViewer(QLabel):
         self.setPixmap(canvas)
 
         if self.roi_is_on:
-            self.roi_start = QPoint(self.x, self.y)
-            self.roi_end = QPoint(self.x+pixmap.width(), self.y+pixmap.height())
+            self.roi_start = QPoint(
+                int(self.x + self.roi_left_offset * self.scale),
+                int(self.y + self.roi_top_offset * self.scale)
+            )
+
+            self.roi_end = QPoint(
+                int(self.x + pixmap.width() + self.roi_right_offset * self.scale),
+                int(self.y + pixmap.height() + self.roi_bottom_offset * self.scale)
+            )
 
 
 class ColorAnalyzer(QWidget):
@@ -729,7 +821,7 @@ class ColorAnalyzer(QWidget):
         self.showed_image = cv2_bgr
         self.image_height = self.showed_image.shape[0]
         self.image_width = self.showed_image.shape[1]
-        self.show_image(fixed_view=False)
+        self.show_image(fixed_view=True)
 
     def rotate(self):
         cv2_bgr = self.showed_image
