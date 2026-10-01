@@ -342,6 +342,10 @@ class ImageViewer(QLabel):
                 int(-self.x + self.width()  + 2*self.offset_x),
                 int(-self.y + self.height() + 2*self.offset_y)
             )
+            self.roi_left_offset = 0
+            self.roi_top_offset = 0
+            self.roi_right_offset = 0
+            self.roi_bottom_offset = 0
         else:
             self.roi_start = None
             self.roi_end = None
@@ -433,6 +437,150 @@ class ImageViewer(QLabel):
                 self.on_left = rect.top() - margin <= event.pos().y() <= rect.bottom() + margin and abs(event.pos().x() - rect.left()) <= margin
                 self.on_right = rect.top() - margin <= event.pos().y() <= rect.bottom() + margin and abs(event.pos().x() - rect.right()) <= margin
 
+    def mouseMoveEvent(self, event):
+
+        self.update_cursor(event.pos())
+
+        if self.last_pos is None:
+            return
+
+        delta = event.pos() - self.last_pos
+
+        # ROI
+        if self.roi_is_on:
+            moved = False
+            if self.on_top:
+                self.roi_top_offset = self.roi_top_offset + delta.y() / self.scale
+                moved = True
+            if self.on_bottom:
+                self.roi_bottom_offset = self.roi_bottom_offset + delta.y() / self.scale
+                moved = True
+            if self.on_left:
+                self.roi_left_offset = self.roi_left_offset + delta.x() / self.scale
+                moved = True
+            if self.on_right:
+                self.roi_right_offset = self.roi_right_offset + delta.x() / self.scale
+                moved = True
+
+            if moved:
+                self.update_roi()
+            if not moved:
+                self.offset_x += delta.x()
+                self.offset_y += delta.y()
+                self.update_image()
+        # Normal
+        elif event.buttons() & Qt.LeftButton:
+            self.offset_x += delta.x()
+            self.offset_y += delta.y()
+            self.update_image()
+
+        self.last_pos = event.pos()
+        
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.last_pos = None
+
+    def resizeEvent(self, event):
+        self.update_image()
+        super().resizeEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        if self.roi_is_on and self.roi_start and self.roi_end:
+            painter = QPainter(self)
+            rect = QRect(self.roi_start, self.roi_end).normalized()
+
+            # Darker outside
+            painter.setBrush(QColor(0, 0, 0, 100))
+            painter.setPen(Qt.NoPen)
+            # Top
+            painter.drawRect(0, 0, self.width(), rect.top())
+            # Bottom
+            painter.drawRect(0, rect.bottom()+1, self.width(), self.height() - rect.bottom())
+            # Left
+            painter.drawRect(0,rect.top(),rect.left(),rect.height())
+            # Right
+            painter.drawRect(rect.right(), rect.top(), self.width() - rect.right(), rect.height())
+
+            # ROI Area line
+            pen = QPen(Qt.black)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect)
+
+            # Roi moving block
+            line_lenth = 30
+            line_width = 4
+            offset = line_width//2
+
+            pen = QPen(Qt.black)
+            pen.setWidth(line_width)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+
+            # Top 
+            painter.drawLine( rect.left() - offset,                        rect.top() - offset,     rect.left() + line_lenth,                      rect.top() - offset)
+            painter.drawLine((rect.left() + rect.right() - line_lenth)//2, rect.top() - offset,    (rect.left() + rect.right() + line_lenth)//2,   rect.top() - offset)
+            painter.drawLine( rect.right() + offset,                       rect.top() - offset,     rect.right() - line_lenth,                     rect.top() - offset)
+            # Bottom
+            painter.drawLine(rect.left() - offset,                         rect.bottom() + offset,  rect.left() + line_lenth,                     rect.bottom() + offset)
+            painter.drawLine((rect.left() + rect.right() - line_lenth)//2, rect.bottom() + offset, (rect.left() + rect.right() + line_lenth)//2,  rect.bottom() + offset)
+            painter.drawLine(rect.right() + offset,                        rect.bottom() + offset,  rect.right() - line_lenth,                    rect.bottom() + offset)
+            # Left
+            painter.drawLine(rect.left() - offset, rect.top() - offset,    rect.left() - offset, rect.top()  + line_lenth)
+            painter.drawLine(rect.left() - offset, (rect.top() + rect.bottom() - line_lenth)//2,    rect.left() - offset, (rect.top() + rect.bottom() + line_lenth)//2)
+            painter.drawLine(rect.left() - offset, rect.bottom() + offset,    rect.left() - offset, rect.bottom() - line_lenth)
+            # Right
+            painter.drawLine(rect.right() + offset, rect.top() - offset,    rect.right() + offset, rect.top()  + line_lenth)
+            painter.drawLine(rect.right() + offset, (rect.top() + rect.bottom() - line_lenth)//2,    rect.right() + offset, (rect.top() + rect.bottom() + line_lenth)//2)
+            painter.drawLine(rect.right() + offset, rect.bottom() + offset,    rect.right() + offset, rect.bottom() - line_lenth)        
+            
+            painter.end()
+
+    def update_image(self):
+        if self.pixmap_original is None:
+            return
+
+        # Scale
+        self.pixmap_scaled = self.pixmap_original.scaled(
+            self.pixmap_original.size() * self.scale,
+            Qt.KeepAspectRatio,
+            #Qt.SmoothTransformation <----------idk whitch is better
+            Qt.FastTransformation  
+        )
+
+        # Set background
+        canvas = QPixmap(self.size())
+        canvas.fill(Qt.lightGray)
+
+        # Painter
+        painter = QPainter(canvas)
+        self.x = int((self.width() - self.pixmap_scaled.width()) // 2 + self.offset_x)
+        self.y = int((self.height() - self.pixmap_scaled.height()) // 2 + self.offset_y)
+        
+        painter.drawPixmap(self.x, self.y, self.pixmap_scaled)
+
+        painter.end()
+
+        self.setPixmap(canvas)
+
+        self.update_roi()
+
+    def update_roi(self):
+        if not self.roi_is_on:
+            return
+        self.roi_start = QPoint(
+            int(self.x + round(self.roi_left_offset) * self.scale),
+            int(self.y + round(self.roi_top_offset) * self.scale)
+        )
+
+        self.roi_end = QPoint(
+            int(self.x + self.pixmap_scaled.width() + round(self.roi_right_offset) * self.scale),
+            int(self.y + self.pixmap_scaled.height() + round(self.roi_bottom_offset) * self.scale)
+        )
+        self.update()
 
     def update_cursor(self, pos):
         if not self.roi_is_on or self.roi_start is None or self.roi_end is None:
@@ -474,114 +622,6 @@ class ImageViewer(QLabel):
 
         # On image
         self.setCursor(Qt.CrossCursor)
-
-    def mouseMoveEvent(self, event):
-
-        self.update_cursor(event.pos())
-
-        if self.last_pos is None:
-            return
-
-        delta = event.pos() - self.last_pos
-
-        # ROI
-        if self.roi_is_on:
-            moved = False
-            if self.on_top:
-                self.roi_top_offset += delta.y() / self.scale
-                moved = True
-            if self.on_bottom:
-                self.roi_bottom_offset += delta.y() / self.scale
-                moved = True
-            if self.on_left:
-                self.roi_left_offset += delta.x() / self.scale
-                moved = True
-            if self.on_right:
-                self.roi_right_offset += delta.x() / self.scale
-                moved = True
-            if not moved:
-                self.offset_x += delta.x()
-                self.offset_y += delta.y()
-        # Normal
-        elif event.buttons() & Qt.LeftButton:
-            self.offset_x += delta.x()
-            self.offset_y += delta.y()
-
-        self.last_pos = event.pos()
-        self.update_image()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.last_pos = None
-
-    def resizeEvent(self, event):
-        self.update_image()
-        super().resizeEvent(event)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-
-        if self.roi_is_on and self.roi_start and self.roi_end:
-            painter = QPainter(self)
-            rect = QRect(self.roi_start, self.roi_end).normalized()
-
-            # Darker outside
-            painter.setBrush(QColor(0, 0, 0, 100))
-            painter.setPen(Qt.NoPen)
-
-            # Top
-            painter.drawRect(0, 0, self.width(), rect.top())
-            # Bottom
-            painter.drawRect(0, rect.bottom()+1, self.width(), self.height() - rect.bottom())
-            # Left
-            painter.drawRect(0,rect.top(),rect.left(),rect.height())
-            # Right
-            painter.drawRect(rect.right(), rect.top(), self.width() - rect.right(), rect.height())
-
-            # ROI Area
-            pen = QPen(Qt.black)
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(rect)
-            painter.end()
-
-    def update_image(self):
-        if self.pixmap_original is None:
-            return
-
-        # Scale
-        pixmap = self.pixmap_original.scaled(
-            self.pixmap_original.size() * self.scale,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
-
-        # Set background
-        canvas = QPixmap(self.size())
-        canvas.fill(Qt.lightGray)
-
-        # Painter
-        painter = QPainter(canvas)
-        self.x = int((self.width() - pixmap.width()) // 2 + self.offset_x)
-        self.y = int((self.height() - pixmap.height()) // 2 + self.offset_y)
-        
-        painter.drawPixmap(self.x, self.y, pixmap)
-        painter.end()
-
-        self.setPixmap(canvas)
-
-        if self.roi_is_on:
-            self.roi_start = QPoint(
-                int(self.x + self.roi_left_offset * self.scale),
-                int(self.y + self.roi_top_offset * self.scale)
-            )
-
-            self.roi_end = QPoint(
-                int(self.x + pixmap.width() + self.roi_right_offset * self.scale),
-                int(self.y + pixmap.height() + self.roi_bottom_offset * self.scale)
-            )
-
 
 class ColorAnalyzer(QWidget):
     def __init__(self, image_path = None):
