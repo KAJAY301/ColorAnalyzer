@@ -5,7 +5,6 @@ import sys
 import cv2
 import numpy as np
 
-
 def hsv_to_name(hsv_pixel):
     color_h_dist = {
         "紅色": 0,
@@ -55,7 +54,6 @@ def hsv_to_name(hsv_pixel):
             color_name = "深" + color_name
 
     return color_name
-
 
 def count_color(pixels, all_color, batch_size=100000):
     original_dtype = np.asarray(pixels).dtype
@@ -107,7 +105,6 @@ def count_color(pixels, all_color, batch_size=100000):
 
     return all_color, result_pixels
 
-
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
     if file_path.suffix.lower() == ".pdf":
@@ -154,7 +151,6 @@ def load_pixels(file_path):
     pixels = hsv.reshape(-1, 3)
     return pixels, image
 
-
 def hsv_distance(point_a, point_b) -> float:
     """Calculate distance between two HSV colors using a cone-shaped model."""
     H1, S1, V1 = map(int, point_a)
@@ -175,7 +171,6 @@ def hsv_distance(point_a, point_b) -> float:
 
     distance = math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
     return round(distance / weight * 255)
-
 
 def resource_path(filename):
     if getattr(sys, "frozen", False):

@@ -23,7 +23,8 @@ from .color_utils import (
     load_pixels,
     resource_path,
 )
-from .widgets import CopyableTableWidget, ImageViewer
+from .image_viewer import ImageViewer
+from .copyable_table import CopyableTableWidget
 
 
 class ColorAnalyzer(QWidget):
