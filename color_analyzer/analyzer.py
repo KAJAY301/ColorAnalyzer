@@ -160,11 +160,11 @@ class ColorAnalyzer(QWidget):
             return
         color_number = how_many_color + 1
 
-        if self.image_label.roi_is_on:
-            x1 = round(self.image_label.roi_left_offset)
-            x2 = round(self.image_label.roi_right_offset) + self.original_image_width
-            y1 = round(self.image_label.roi_top_offset)
-            y2 = round(self.image_label.roi_bottom_offset) + self.original_image_height
+        if self.image_label.roi.is_on:
+            x1 = round(self.image_label.roi.left_offset)
+            x2 = round(self.image_label.roi.right_offset) + self.original_image_width
+            y1 = round(self.image_label.roi.top_offset)
+            y2 = round(self.image_label.roi.bottom_offset) + self.original_image_height
 
             x1 = max(0, min(x1, self.original_image_width))
             x2 = max(0, min(x2, self.original_image_width))
@@ -209,7 +209,7 @@ class ColorAnalyzer(QWidget):
             )[:color_number]
         )
 
-        if self.image_label.roi_is_on:
+        if self.image_label.roi.is_on:
             color_count, _ = count_color(roi_pixels, color_count)
             _, result_pixels = count_color(self.pixels, color_count.copy())
             percentage_total = len(roi_pixels)
