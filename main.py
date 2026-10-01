@@ -146,7 +146,7 @@ def count_color(pixels, all_color, batch_size=100000):
         )
 
     for i, color in enumerate(all_color.keys()):
-        all_color[color] += int(total_counts[i])
+        all_color[color] = int(total_counts[i])
 
     return all_color, result_pixels
 
@@ -776,8 +776,28 @@ class ColorAnalyzer(QWidget):
             return
         color_number = how_many_color + 1
 
-        # Group simular color 
-        pre_color_count = Counter(map(tuple, self.pixels))
+        # Group similar color in roi or not in roi
+        if self.image_label.roi_is_on:
+            x1 = round(self.image_label.roi_left_offset)
+            x2 = round(self.image_label.roi_right_offset) + self.original_image_width
+            y1 = round(self.image_label.roi_top_offset)
+            y2 = round(self.image_label.roi_bottom_offset) + self.original_image_height
+
+            x1 = max(0, min(x1, self.original_image_width))
+            x2 = max(0, min(x2, self.original_image_width))
+            y1 = max(0, min(y1, self.original_image_height))
+            y2 = max(0, min(y2, self.original_image_height))
+
+            pixels_2d = self.pixels.reshape(self.original_image_height, self.original_image_width, 3)
+            roi_pixels = pixels_2d[y1:y2, x1:x2].reshape(-1, 3)
+            if roi_pixels.size == 0:
+                QMessageBox.warning(self, "選取區域錯誤", "選取區域沒有像素")
+                return
+
+            pre_color_count = Counter(map(tuple, roi_pixels))
+        else:
+            pre_color_count = Counter(map(tuple, self.pixels))
+        
         grouped_count = {}
 
         for color, count in pre_color_count.most_common():
@@ -804,8 +824,14 @@ class ColorAnalyzer(QWidget):
             )[:color_number]
         )
 
-        # Count color, get result pixels
-        color_count, result_pixels = count_color(self.pixels, color_count)
+        # Count colors in the selected region for the table, then recolor the full image.
+        if self.image_label.roi_is_on:
+            color_count, _ = count_color(roi_pixels, color_count)
+            _, result_pixels = count_color(self.pixels, color_count.copy())
+            percentage_total = len(roi_pixels)
+        else:
+            color_count, result_pixels = count_color(self.pixels, color_count)
+            percentage_total = len(self.pixels)
 
         # Sort from many to few
         sorted_colors = sorted(color_count.items(), key=lambda x: x[1], reverse=True)
@@ -825,7 +851,7 @@ class ColorAnalyzer(QWidget):
                 display_name = name
 
             # Percentage
-            percentage = (count / self.pixels.shape[0] * 100)
+            percentage = (count / percentage_total * 100)
 
             # show on table
             row = self.table.rowCount()
@@ -878,7 +904,6 @@ class ColorAnalyzer(QWidget):
         #self.image_height = self.showed_image.shape[0]
         #self.image_width = self.showed_image.shape[1]
         self.show_image()
-
 
     def show_image(self, fixed_view=True):
         """show image"""
