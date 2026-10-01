@@ -66,8 +66,13 @@ The application converts the input image (or each PDF page) to HSV color space, 
 
 ## Project Structure
 
-- main.py — main application entry point and UI logic
+- main.py — application entry point
+- color_analyzer/ — application modules
+  - analyzer.py — main window and analysis workflow
+  - color_utils.py — color processing and image/PDF loading
+  - widgets.py — image viewer and copyable table widgets
+- resources/ — toolbar icons
 - requirements.txt — Python dependencies
 - run.bat — Windows shortcut for launching the app
-- config.json — optional configuration file placeholder
+- ColorAnalyzer.spec — PyInstaller build configuration
 
