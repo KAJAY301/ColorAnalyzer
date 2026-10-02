@@ -46,6 +46,7 @@ class ImageViewer(QLabel):
         self.image = ImageState()
         self.roi = ROIState()
         self.mouse = MouseState()
+        self.pixmap_scaled = None
 
     def set_roi_mode(self, toggle):
         if not self.roi.is_on:
@@ -78,6 +79,7 @@ class ImageViewer(QLabel):
             self.image.scale = min(self.width() / width, self.height() / height)
             self.image.offset_x = 0
             self.image.offset_y = 0
+        self.update_scaled_image()
         self.update_image()
 
     def wheelEvent(self, event):
@@ -114,6 +116,7 @@ class ImageViewer(QLabel):
 
         self.image.offset_x = new_x - center_x
         self.image.offset_y = new_y - center_y
+        self.update_scaled_image()
         self.update_image()
 
     def mousePressEvent(self, event):
@@ -305,14 +308,8 @@ class ImageViewer(QLabel):
             painter.end()
 
     def update_image(self):
-        if self.image.pixmap_original is None:
+        if self.image.pixmap_original is None or self.pixmap_scaled is None:
             return
-
-        self.pixmap_scaled = self.image.pixmap_original.scaled(
-            self.image.pixmap_original.size() * self.image.scale,
-            Qt.KeepAspectRatio,
-            Qt.FastTransformation,
-        )
 
         canvas = QPixmap(self.size())
         canvas.fill(Qt.lightGray)
@@ -330,6 +327,16 @@ class ImageViewer(QLabel):
 
         self.setPixmap(canvas)
         self.update_roi()
+
+    def update_scaled_image(self):
+        if self.image.pixmap_original is None:
+            return
+
+        self.pixmap_scaled = self.image.pixmap_original.scaled(
+            self.image.pixmap_original.size() * self.image.scale,
+            Qt.KeepAspectRatio,
+            Qt.FastTransformation,
+        )
 
     def update_roi(self):
         if not self.roi.is_on:

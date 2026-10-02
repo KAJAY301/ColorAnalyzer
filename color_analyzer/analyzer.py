@@ -150,8 +150,8 @@ class ColorAnalyzer(QWidget):
         self.setLayout(main_layout)
 
     def analyze(self):
+        # Input
         text = self.color_input.text().strip()
-
         try:
             how_many_color = int(text)
             if how_many_color <= 0:
@@ -161,6 +161,7 @@ class ColorAnalyzer(QWidget):
             return
         color_number = how_many_color + 1
 
+        # Cut ROI Area
         if self.image_label.roi.is_on:
             x1 = round(self.image_label.roi.left_offset)
             x2 = round(self.image_label.roi.right_offset) + self.original_image_width
@@ -178,12 +179,8 @@ class ColorAnalyzer(QWidget):
                 3,
             )
             roi_pixels = pixels_2d[y1:y2, x1:x2].reshape(-1, 3)
-            if roi_pixels.size == 0:
-                QMessageBox.warning(self, "選取區域錯誤", "選取區域沒有像素")
-                return
 
             colors, counts = unique_color_counts(roi_pixels)
-            
         else:
             colors, counts = unique_color_counts(self.pixels)
 
@@ -191,11 +188,11 @@ class ColorAnalyzer(QWidget):
         colors = colors[order]
         counts = counts[order]
 
+        # Group colors that are close to each other
         grouped_count = {}
         for color, count in zip(colors, counts):
             color = tuple(map(int, color))
             count = int(count)
-
             matched_color = None
 
             for selected_color in grouped_count:
@@ -208,7 +205,7 @@ class ColorAnalyzer(QWidget):
                 grouped_count[matched_color] += count
             else:
                 grouped_count[color] = count
-
+        
         color_count = dict(
             sorted(
                 grouped_count.items(),
@@ -217,6 +214,7 @@ class ColorAnalyzer(QWidget):
             )[:color_number]
         )
 
+        # Count colors
         if self.image_label.roi.is_on:
             color_count, _ = count_color(roi_pixels, color_count)
             _, result_pixels = count_color(self.pixels, color_count.copy())
@@ -225,12 +223,14 @@ class ColorAnalyzer(QWidget):
             color_count, result_pixels = count_color(self.pixels, color_count)
             percentage_total = len(self.pixels)
 
+        # Sort colors by count
         sorted_colors = sorted(
             color_count.items(),
             key=lambda item: item[1],
             reverse=True,
         )
 
+        # Update table
         self.table.setRowCount(0)
 
         name_count = {}

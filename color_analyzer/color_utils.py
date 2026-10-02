@@ -124,6 +124,7 @@ def unique_color_counts(pixels):
 
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
+    # PDF
     if file_path.suffix.lower() == ".pdf":
         import pymupdf
 
@@ -132,7 +133,7 @@ def load_pixels(file_path):
             if document.page_count == 0:
                 raise RuntimeError("PDF 沒有可讀取的頁面")
             for page in document:
-                pixmap = page.get_pixmap(dpi=150,alpha=False)
+                pixmap = page.get_pixmap(dpi=300,alpha=False)
                 rgb = np.frombuffer(pixmap.samples, dtype=np.uint8)
                 rgb = rgb.reshape(pixmap.height, pixmap.width, pixmap.n)
                 if pixmap.n == 4:
@@ -161,9 +162,21 @@ def load_pixels(file_path):
         pixels = np.concatenate(hsv_images, axis=0)
         return pixels, display_image
 
+    
+    
     image = cv2.imread(str(file_path), cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"無法讀取圖片：{file_path}")
+    # JPG / JPEG
+    #if file_path.suffix.lower()  in (".jpg", ".jpeg"):
+    #    image = cv2.fastNlMeansDenoisingColored(
+    #        image,
+    #        None,
+    #        h=3,
+    #        hColor=5,
+    #        templateWindowSize=7,
+    #        searchWindowSize=21
+    #    )
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     pixels = hsv.reshape(-1, 3)
     return pixels, image
