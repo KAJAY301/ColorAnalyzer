@@ -1,5 +1,4 @@
 import sys
-from collections import Counter
 
 import cv2
 import numpy as np
@@ -22,6 +21,7 @@ from .color_utils import (
     hsv_to_name,
     load_pixels,
     resource_path,
+    unique_color_counts,
 )
 from .image_viewer import ImageViewer
 from .copyable_table import CopyableTableWidget
@@ -182,13 +182,20 @@ class ColorAnalyzer(QWidget):
                 QMessageBox.warning(self, "選取區域錯誤", "選取區域沒有像素")
                 return
 
-            pre_color_count = Counter(map(tuple, roi_pixels))
+            colors, counts = unique_color_counts(roi_pixels)
+            
         else:
-            pre_color_count = Counter(map(tuple, self.pixels))
+            colors, counts = unique_color_counts(self.pixels)
+
+        order = np.argsort(counts)[::-1]
+        colors = colors[order]
+        counts = counts[order]
 
         grouped_count = {}
-        for color, count in pre_color_count.most_common():
+        for color, count in zip(colors, counts):
             color = tuple(map(int, color))
+            count = int(count)
+
             matched_color = None
 
             for selected_color in grouped_count:

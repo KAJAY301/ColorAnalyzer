@@ -105,6 +105,23 @@ def count_color(pixels, all_color, batch_size=100000):
 
     return all_color, result_pixels
 
+def unique_color_counts(pixels):
+    pixels = np.asarray(pixels, dtype=np.uint8).reshape(-1, 3)
+    packed = (
+        (pixels[:, 0].astype(np.uint32) << 16)
+        | (pixels[:, 1].astype(np.uint32) << 8)
+        | pixels[:, 2].astype(np.uint32)
+    )
+    packed_colors, counts = np.unique(packed, return_counts=True)
+    colors = np.column_stack(
+        (
+            packed_colors >> 16,
+            (packed_colors >> 8) & 0xFF,
+            packed_colors & 0xFF,
+        )
+    ).astype(np.uint8)
+    return colors, counts
+
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
     if file_path.suffix.lower() == ".pdf":
@@ -115,7 +132,7 @@ def load_pixels(file_path):
             if document.page_count == 0:
                 raise RuntimeError("PDF 沒有可讀取的頁面")
             for page in document:
-                pixmap = page.get_pixmap(alpha=False)
+                pixmap = page.get_pixmap(dpi=150,alpha=False)
                 rgb = np.frombuffer(pixmap.samples, dtype=np.uint8)
                 rgb = rgb.reshape(pixmap.height, pixmap.width, pixmap.n)
                 if pixmap.n == 4:
