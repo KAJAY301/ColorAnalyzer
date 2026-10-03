@@ -17,14 +17,14 @@ from PyQt5.QtWidgets import (
 
 from .color_utils import (
     count_color,
-    hsv_distance,
     hsv_to_name,
     load_pixels,
     resource_path,
     unique_color_counts,
     pop_transition,
     pop_ringing, 
-    hsv_to_rgb
+    hsv_to_rgb,
+    group_similar_colors,
 )
 from .image_viewer import ImageViewer
 from .copyable_table import CopyableTableWidget
@@ -195,23 +195,7 @@ class ColorAnalyzer(QWidget):
         colors = colors[order]
         counts = counts[order]
 
-        # Group colors that are close to each other
-        grouped_count = {}
-        for color, count in zip(colors, counts):
-            color = tuple(map(int, color))
-            count = int(count)
-            matched_color = None
-
-            for selected_color in grouped_count:
-                distance = hsv_distance(color, selected_color)
-                if distance < 20:
-                    matched_color = selected_color
-                    break
-
-            if matched_color is not None:
-                grouped_count[matched_color] += count
-            else:
-                grouped_count[color] = count
+        grouped_count = group_similar_colors(colors, counts)
         
         color_count = dict(
             sorted(
@@ -278,23 +262,7 @@ class ColorAnalyzer(QWidget):
         colors = colors[order]
         counts = counts[order]
 
-        # Group colors that are close to each other
-        grouped_count = {}
-        for color, count in zip(colors, counts):
-            color = tuple(map(int, color))
-            count = int(count)
-            matched_color = None
-
-            for selected_color in grouped_count:
-                distance = hsv_distance(color, selected_color)
-                if distance < 20:
-                    matched_color = selected_color
-                    break
-
-            if matched_color is not None:
-                grouped_count[matched_color] += count
-            else:
-                grouped_count[color] = count
+        grouped_count = group_similar_colors(colors, counts)
         
         color_count = dict(
             sorted(
