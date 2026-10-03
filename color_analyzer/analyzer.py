@@ -22,6 +22,9 @@ from .color_utils import (
     load_pixels,
     resource_path,
     unique_color_counts,
+    pop_transition,
+    pop_ringing, 
+    hsv_to_rgb
 )
 from .image_viewer import ImageViewer
 from .copyable_table import CopyableTableWidget
@@ -72,9 +75,13 @@ class ColorAnalyzer(QWidget):
         self.analyze_button.clicked.connect(self.analyze)
         self.color_input.returnPressed.connect(self.analyze_button.click)
 
+        self.auto_color_button = QPushButton("自動分析")
+        self.auto_color_button.clicked.connect(self.auto_analyze)
+
         input_layout.addWidget(input_label)
         input_layout.addWidget(self.color_input)
         input_layout.addWidget(self.analyze_button)
+        input_layout.addWidget(self.auto_color_button)
         input_layout.addStretch()
         data_layout.addLayout(input_layout)
 
@@ -231,41 +238,92 @@ class ColorAnalyzer(QWidget):
         )
 
         # Update table
-        self.table.setRowCount(0)
+        self.update_table(sorted_colors, percentage_total)
 
-        name_count = {}
-        for color, count in sorted_colors:
-            name = hsv_to_name(color)
-            if name in name_count:
-                name_count[name] += 1
-                display_name = f"{name}{name_count[name]}"
-            else:
-                name_count[name] = 1
-                display_name = name
+        cv2_hsv = result_pixels.reshape(
+            self.original_image_height,
+            self.original_image_width,
+            3,
+        )
+        cv2_bgr = cv2.cvtColor(cv2_hsv, cv2.COLOR_HSV2BGR)
+        self.showed_image = cv2_bgr
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image(fixed_view=True)
 
-            percentage = count / percentage_total * 100
-
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-
-            color_widget = QWidget()
-            rgb = self.hsv_to_rgb(color)
-            color_widget.setStyleSheet(
-                f"background-color: rgb({rgb[0]},{rgb[1]},{rgb[2]});"
+    def auto_analyze(self):
+        sample_size = 10
+        if self.image_label.roi.is_on:
+            x1 = round(self.image_label.roi.left_offset)
+            x2 = round(self.image_label.roi.right_offset) + self.original_image_width
+            y1 = round(self.image_label.roi.top_offset)
+            y2 = round(self.image_label.roi.bottom_offset) + self.original_image_height
+        
+            x1 = max(0, min(x1, self.original_image_width))
+            x2 = max(0, min(x2, self.original_image_width))
+            y1 = max(0, min(y1, self.original_image_height))
+            y2 = max(0, min(y2, self.original_image_height))
+        
+            pixels_2d = self.pixels.reshape(
+                self.original_image_height,
+                self.original_image_width,
+                3,
             )
-            self.table.setCellWidget(row, 0, color_widget)
+            roi_pixels = pixels_2d[y1:y2, x1:x2].reshape(-1, 3)
+            colors, counts = unique_color_counts(roi_pixels)
+        else:
+            colors, counts = unique_color_counts(self.pixels)
 
-            name_item = QTableWidgetItem(display_name)
-            name_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 1, name_item)
+        order = np.argsort(counts)[::-1]
+        colors = colors[order]
+        counts = counts[order]
 
-            percentage_item = QTableWidgetItem(f"{percentage:.2f}%")
-            percentage_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 2, percentage_item)
+        # Group colors that are close to each other
+        grouped_count = {}
+        for color, count in zip(colors, counts):
+            color = tuple(map(int, color))
+            count = int(count)
+            matched_color = None
 
-            count_item = QTableWidgetItem(str(count))
-            count_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 3, count_item)
+            for selected_color in grouped_count:
+                distance = hsv_distance(color, selected_color)
+                if distance < 20:
+                    matched_color = selected_color
+                    break
+
+            if matched_color is not None:
+                grouped_count[matched_color] += count
+            else:
+                grouped_count[color] = count
+        
+        color_count = dict(
+            sorted(
+                grouped_count.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:sample_size]
+        )
+
+        # Count colors
+        if self.image_label.roi.is_on:
+            color_count, _ = count_color(roi_pixels, color_count)
+            _, result_pixels = count_color(self.pixels, color_count.copy())
+            percentage_total = len(roi_pixels)
+        else:
+            color_count, result_pixels = count_color(self.pixels, color_count)
+            percentage_total = len(self.pixels)
+
+        # Sort colors by count
+        sorted_colors = sorted(
+            color_count.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+        cleaned_colors = pop_transition(sorted_colors, percentage_total)
+        cleanest_colors = pop_ringing(cleaned_colors)
+
+        self.update_table(cleaned_colors, percentage_total)
 
         cv2_hsv = result_pixels.reshape(
             self.original_image_height,
@@ -303,8 +361,40 @@ class ColorAnalyzer(QWidget):
         pixmap = QPixmap.fromImage(qimage)
         self.image_label.set_image(pixmap, fixed_view=fixed_view)
 
-    @staticmethod
-    def hsv_to_rgb(hsv_color):
-        hsv = np.uint8([[hsv_color]])
-        rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
-        return tuple(map(int, rgb[0][0]))
+    def update_table(self, sorted_colors, percentage_total):
+        self.table.setRowCount(0)
+        name_count = {}
+        for color, count in sorted_colors:
+            name = hsv_to_name(color)
+            if name in name_count:
+                name_count[name] += 1
+                display_name = f"{name}{name_count[name]}"
+            else:
+                name_count[name] = 1
+                display_name = name
+
+            percentage = count / percentage_total * 100
+
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+
+            color_widget = QWidget()
+            rgb = hsv_to_rgb(color)
+            color_widget.setStyleSheet(
+                f"background-color: rgb({rgb[0]},{rgb[1]},{rgb[2]});"
+            )
+            self.table.setCellWidget(row, 0, color_widget)
+
+            name_item = QTableWidgetItem(display_name)
+            name_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 1, name_item)
+
+            percentage_item = QTableWidgetItem(f"{percentage:.2f}%")
+            percentage_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 2, percentage_item)
+
+            count_item = QTableWidgetItem(str(count))
+            count_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 3, count_item)
+
+            print(rgb)

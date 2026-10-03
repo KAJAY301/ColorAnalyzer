@@ -55,6 +55,11 @@ def hsv_to_name(hsv_pixel):
 
     return color_name
 
+def hsv_to_rgb(hsv_color):
+    hsv = np.uint8([[hsv_color]])
+    rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+    return tuple(map(int, rgb[0][0]))
+
 def count_color(pixels, all_color, batch_size=100000):
     original_dtype = np.asarray(pixels).dtype
     pixels = np.asarray(pixels, dtype=np.float32)
@@ -209,3 +214,76 @@ def resource_path(filename):
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     return os.path.join(base_path, filename)
+
+def pop_transition(sorted_colors, total_pixels, distance_threshold=12):
+    colors = list(sorted_colors)
+    excluded = set()
+
+    for i in range(len(colors) - 1, -1, -1):
+        candidate_hsv, candidate_count = colors[i]
+        if candidate_count >= 0.01 * total_pixels:
+            continue
+
+        candidate_rgb = hsv_to_rgb(candidate_hsv)
+        best_match = None
+
+        for j in range(i):
+            color_a_hsv, _ = colors[j]
+            color_a_rgb = hsv_to_rgb(color_a_hsv)
+
+            for k in range(j + 1, i):
+                color_b_hsv, _ = colors[k]
+                color_b_rgb = hsv_to_rgb(color_b_hsv)
+                distance, t, _ = point_to_segment_distance(
+                    candidate_rgb,
+                    color_a_rgb,
+                    color_b_rgb,
+                )
+
+                if 0 <= t <= 1 and distance <= distance_threshold:
+                    if best_match is None or distance < best_match[0]:
+                        best_match = (distance, j, k, t)
+
+        if best_match is not None:
+            _, j, k, t = best_match
+            excluded.add(candidate_hsv)
+            target_index = j if t < 0.5 else k
+            target_hsv, target_count = colors[target_index]
+            colors[target_index] = (target_hsv, target_count + candidate_count)
+
+    return [
+        (color, count)
+        for color, count in colors
+        if color not in excluded
+    ]
+
+
+
+
+
+def pop_ringing(sorted_colors):
+    pass
+
+def point_to_segment_distance(C, A, B):
+
+    C = np.asarray(C, dtype=np.float64)
+    A = np.asarray(A, dtype=np.float64)
+    B = np.asarray(B, dtype=np.float64)
+
+    AB = B - A
+    AB2 = np.dot(AB, AB)
+
+    if AB2 == 0:
+        return np.linalg.norm(C - A), 0.0, A
+
+    t = np.dot(C - A, AB) / AB2
+
+    projection = A + t * AB
+
+    distance = np.linalg.norm(C - projection)
+
+    return distance, t, projection
+
+
+
+
