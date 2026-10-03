@@ -364,5 +364,3 @@ class ColorAnalyzer(QWidget):
             count_item = QTableWidgetItem(str(count))
             count_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 3, count_item)
-
-            print(rgb)

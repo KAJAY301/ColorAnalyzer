@@ -145,10 +145,14 @@ def group_similar_colors(colors, counts, distance_threshold=20):
 
     grouped_counts = {}
     representative_colors = []
-    representative_features = []
     spatial_buckets = {}
     cell_size = (distance_threshold + 0.5) * math.sqrt(5.0) / 255.0
-    feature_scale = 255.0 / math.sqrt(5.0)
+    neighbor_offsets = tuple(
+        (hue_offset, saturation_offset, value_offset)
+        for hue_offset in (-1, 0, 1)
+        for saturation_offset in (-1, 0, 1)
+        for value_offset in (-1, 0, 1)
+    )
 
     for color_values, count_value, color_feature in zip(
         colors, counts, color_features
@@ -156,28 +160,14 @@ def group_similar_colors(colors, counts, distance_threshold=20):
         color = tuple(map(int, color_values))
         count = int(count_value)
         matched_color = None
-        cell = tuple(np.floor(color_feature / cell_size).astype(np.int64))
-        candidate_indices = []
+        cell = tuple(
+            math.floor(feature_value / cell_size)
+            for feature_value in color_feature
+        )
 
-        for hue_offset in (-1, 0, 1):
-            for saturation_offset in (-1, 0, 1):
-                for value_offset in (-1, 0, 1):
-                    neighbor_cell = (
-                        cell[0] + hue_offset,
-                        cell[1] + saturation_offset,
-                        cell[2] + value_offset,
-                    )
-                    candidate_indices.extend(spatial_buckets.get(neighbor_cell, ()))
-
-        for representative_index in sorted(candidate_indices):
+        for representative_index in spatial_buckets.get(cell, ()):
             selected_color = representative_colors[representative_index]
-            feature_delta = color_feature - representative_features[representative_index]
-            distance = math.sqrt(
-                feature_delta[0] ** 2
-                + feature_delta[1] ** 2
-                + feature_delta[2] ** 2
-            )
-            if round(distance * feature_scale) < distance_threshold:
+            if hsv_distance(color, selected_color) < distance_threshold:
                 matched_color = selected_color
                 break
 
@@ -187,8 +177,13 @@ def group_similar_colors(colors, counts, distance_threshold=20):
             grouped_counts[color] = count
             representative_index = len(representative_colors)
             representative_colors.append(color)
-            representative_features.append(color_feature)
-            spatial_buckets.setdefault(cell, []).append(representative_index)
+            for offset in neighbor_offsets:
+                neighbor_cell = tuple(
+                    cell[axis] + offset[axis] for axis in range(3)
+                )
+                spatial_buckets.setdefault(neighbor_cell, []).append(
+                    representative_index
+                )
 
     return grouped_counts
 
