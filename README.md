@@ -33,7 +33,13 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the application with a file path:
+Start the application and choose a file using the **選擇檔案** button. You can use the same button later to switch to another image or PDF.
+
+```bash
+python main.py
+```
+
+You can also open a file directly by passing its path:
 
 ```bash
 python main.py image.png
@@ -45,6 +51,8 @@ On Windows, you can also use:
 ```bat
 run.bat image.png
 ```
+
+Run `run.bat` without an argument to start the application, then choose a file with the **選擇檔案** button.
 
 Then enter the number of colors to analyze in the GUI and click the analysis button.
 
@@ -61,7 +69,7 @@ The application converts the input image (or each PDF page) to HSV color space, 
 ## Notes
 
 - For PDF files, all pages are combined before the color count is calculated.
-- The script expects the path to a real file. If the file does not exist, it will exit with an error.
+- If a selected file cannot be read, the app displays an error and remains open so you can choose another file.
 - The app is intended for local desktop use and requires a graphical session.
 
 ## Project Structure
@@ -75,4 +83,3 @@ The application converts the input image (or each PDF page) to HSV color space, 
 - requirements.txt — Python dependencies
 - run.bat — Windows shortcut for launching the app
 - ColorAnalyzer.spec — PyInstaller build configuration
-

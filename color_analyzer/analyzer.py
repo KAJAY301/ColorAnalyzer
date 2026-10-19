@@ -1,5 +1,3 @@
-import sys
-
 import cv2
 import numpy as np
 from PyQt5.QtCore import QSize, Qt
@@ -7,6 +5,7 @@ from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QFileDialog,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -36,23 +35,10 @@ class ColorAnalyzer(QWidget):
 
         self.pixels = None
         self.showed_image = None
-
-        if image_path:
-            try:
-                pixels, image = load_pixels(image_path)
-            except Exception as error:
-                QMessageBox.critical(self, "錯誤", str(error))
-                sys.exit(1)
-
-            self.pixels = pixels
-            self.showed_image = image
-            self.image_height = image.shape[0]
-            self.image_width = image.shape[1]
-            self.original_image_height = image.shape[0]
-            self.original_image_width = image.shape[1]
-
         self.init_ui()
-        self.show_image(fixed_view=False)
+        self.set_file_loaded(False)
+        if image_path is not None:
+            self.load_image(image_path)
 
     def init_ui(self):
         self.setWindowTitle("Color Analyzer")
@@ -65,6 +51,8 @@ class ColorAnalyzer(QWidget):
         main_layout.addLayout(image_layout, 1)
 
         input_layout = QHBoxLayout()
+        self.open_file_button = QPushButton("選擇檔案")
+        self.open_file_button.clicked.connect(self.open_file)
         input_label = QLabel("顏色數量：")
 
         self.color_input = QLineEdit()
@@ -78,6 +66,7 @@ class ColorAnalyzer(QWidget):
         self.auto_color_button = QPushButton("自動分析")
         self.auto_color_button.clicked.connect(self.auto_analyze)
 
+        input_layout.addWidget(self.open_file_button)
         input_layout.addWidget(input_label)
         input_layout.addWidget(self.color_input)
         input_layout.addWidget(self.analyze_button)
@@ -91,12 +80,12 @@ class ColorAnalyzer(QWidget):
         self.image_label = ImageViewer()
         tool_layout = QHBoxLayout()
 
-        select_button = QPushButton()
+        self.select_button = QPushButton()
         select_icon = QIcon(resource_path("resources/select.png"))
-        select_button.setIcon(select_icon)
-        select_button.setIconSize(QSize(29, 29))
-        select_button.setToolTip("Select")
-        select_button.setStyleSheet(
+        self.select_button.setIcon(select_icon)
+        self.select_button.setIconSize(QSize(29, 29))
+        self.select_button.setToolTip("Select")
+        self.select_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -107,16 +96,16 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        select_button.clicked.connect(
+        self.select_button.clicked.connect(
             lambda: self.image_label.set_roi_mode(True)
         )
 
-        rotate_button = QPushButton()
+        self.rotate_button = QPushButton()
         rotate_icon = QIcon(resource_path("resources/rotate.png"))
-        rotate_button.setIcon(rotate_icon)
-        rotate_button.setIconSize(QSize(29, 29))
-        rotate_button.setToolTip("Rotate")
-        rotate_button.setStyleSheet(
+        self.rotate_button.setIcon(rotate_icon)
+        self.rotate_button.setIconSize(QSize(29, 29))
+        self.rotate_button.setToolTip("Rotate")
+        self.rotate_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -127,14 +116,14 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        rotate_button.clicked.connect(self.rotate)
+        self.rotate_button.clicked.connect(self.rotate)
 
-        mirror_button = QPushButton()
+        self.mirror_button = QPushButton()
         mirror_icon = QIcon(resource_path("resources/mirror.png"))
-        mirror_button.setIcon(mirror_icon)
-        mirror_button.setIconSize(QSize(29, 29))
-        mirror_button.setToolTip("Mirror")
-        mirror_button.setStyleSheet(
+        self.mirror_button.setIcon(mirror_icon)
+        self.mirror_button.setIconSize(QSize(29, 29))
+        self.mirror_button.setToolTip("Mirror")
+        self.mirror_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -145,18 +134,57 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        mirror_button.clicked.connect(self.mirror_horizontal)
+        self.mirror_button.clicked.connect(self.mirror_horizontal)
 
-        tool_layout.addWidget(select_button)
-        tool_layout.addWidget(rotate_button)
-        tool_layout.addWidget(mirror_button)
+        tool_layout.addWidget(self.select_button)
+        tool_layout.addWidget(self.rotate_button)
+        tool_layout.addWidget(self.mirror_button)
         tool_layout.addStretch()
 
         image_layout.addLayout(tool_layout)
         image_layout.addWidget(self.image_label)
         self.setLayout(main_layout)
 
+    def set_file_loaded(self, loaded):
+        self.analyze_button.setEnabled(loaded)
+        self.auto_color_button.setEnabled(loaded)
+        self.select_button.setEnabled(loaded)
+        self.rotate_button.setEnabled(loaded)
+        self.mirror_button.setEnabled(loaded)
+
+    def open_file(self):
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "選擇圖片或 PDF",
+            "",
+            "Images and PDFs (*.png *.jpg *.jpeg *.pdf)",
+        )
+        if selected_path:
+            self.load_image(selected_path)
+
+    def load_image(self, image_path):
+        try:
+            pixels, image = load_pixels(image_path)
+        except Exception as error:
+            QMessageBox.critical(self, "錯誤", str(error))
+            return
+
+        if self.image_label.roi.is_on:
+            self.image_label.set_roi_mode(False)
+
+        self.pixels = pixels
+        self.showed_image = image
+        self.image_height, self.image_width = image.shape[:2]
+        self.original_image_height, self.original_image_width = image.shape[:2]
+        self.color_input.clear()
+        self.table.setRowCount(0)
+        self.set_file_loaded(True)
+        self.show_image(fixed_view=False)
+
     def analyze(self):
+        if self.pixels is None:
+            return
+
         # Input
         text = self.color_input.text().strip()
         try:
@@ -236,6 +264,9 @@ class ColorAnalyzer(QWidget):
         self.show_image(fixed_view=True)
 
     def auto_analyze(self):
+        if self.pixels is None:
+            return
+
         sample_size = 10
         if self.image_label.roi.is_on:
             x1 = round(self.image_label.roi.left_offset)
@@ -305,6 +336,9 @@ class ColorAnalyzer(QWidget):
         self.show_image(fixed_view=True)
 
     def rotate(self):
+        if self.showed_image is None:
+            return
+
         rotated_image = cv2.rotate(self.showed_image, cv2.ROTATE_90_CLOCKWISE)
         self.showed_image = rotated_image
         self.image_height = self.showed_image.shape[0]
@@ -312,11 +346,17 @@ class ColorAnalyzer(QWidget):
         self.show_image()
 
     def mirror_horizontal(self):
+        if self.showed_image is None:
+            return
+
         mirrored_image = cv2.flip(self.showed_image, 1)
         self.showed_image = mirrored_image
         self.show_image()
 
     def show_image(self, fixed_view=True):
+        if self.showed_image is None:
+            return
+
         result_bgr = np.ascontiguousarray(self.showed_image)
         qimage = QImage(
             result_bgr.data,

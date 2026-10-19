@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -189,6 +190,8 @@ def group_similar_colors(colors, counts, distance_threshold=20):
 
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
+    file_path = Path(file_path)
+
     # PDF
     if file_path.suffix.lower() == ".pdf":
         import pymupdf
@@ -334,7 +337,6 @@ def point_to_segment_distance(C, A, B):
     distance = np.linalg.norm(C - projection)
 
     return distance, t, projection
-
 
 
 

@@ -7,12 +7,9 @@ from color_analyzer.analyzer import ColorAnalyzer
 
 
 def main():
-    if len(sys.argv) > 1:
-        image_path = Path(sys.argv[1])
-    else:
-        print("Error")
-
     app = QApplication(sys.argv)
+
+    image_path = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ColorAnalyzer(image_path)
     window.show()
     return app.exec_()
