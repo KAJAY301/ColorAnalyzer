@@ -6,7 +6,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-    ('resources', 'resources'),
+        ('resources', 'resources'),
+        ('stylesheet.qss', '.'),
     ],
     hiddenimports=[],
     hookspath=[],

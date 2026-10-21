@@ -6,7 +6,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-def hsv_to_name(hsv_pixel):
+# Rust extension module for color analysis
+import color_core
+
+def hsv_to_name(hsv_color: tuple) -> str:
+    """Convert an HSV pixel to a color name in Chinese."""
     color_h_dist = {
         "紅色": 0,
         "橘色": 15,
@@ -21,7 +25,7 @@ def hsv_to_name(hsv_pixel):
         "洋紅色": 150,
         "玫瑰紅": 165,
     }
-    h, s, v = hsv_pixel
+    h, s, v = hsv_color
 
     # Black Gray White
     if v <= 30:
@@ -56,12 +60,25 @@ def hsv_to_name(hsv_pixel):
 
     return color_name
 
-def hsv_to_rgb(hsv_color):
+def hsv_to_rgb(hsv_color: tuple) -> tuple:
+    """Convert an HSV color to RGB."""
     hsv = np.uint8([[hsv_color]])
     rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
     return tuple(map(int, rgb[0][0]))
 
 def count_color(pixels, all_color, batch_size=100000):
+    if color_core is not None and hasattr(color_core, "count_color") and len(all_color) > 0:
+        keys = list(all_color.keys())
+        px = np.ascontiguousarray(pixels, dtype=np.uint8).reshape(-1, 3)
+        colors = np.asarray(keys, dtype=np.uint8).reshape(-1, 3)
+        result, counts = color_core.count_color(px, colors)
+        for key, n in zip(keys, counts):
+            all_color[key] = int(n)
+        return all_color, result
+    return _count_color_py(pixels, all_color, batch_size)
+
+def _count_color_py(pixels: list, all_color: dict, batch_size: int = 100000) -> tuple:
+    """Count occurrences of each color in a list of pixels."""
     original_dtype = np.asarray(pixels).dtype
     pixels = np.asarray(pixels, dtype=np.float32)
     colors = np.asarray(list(all_color.keys()), dtype=np.float32)
@@ -129,64 +146,12 @@ def unique_color_counts(pixels):
     return colors, counts
 
 def group_similar_colors(colors, counts, distance_threshold=20):
-    colors = np.asarray(colors, dtype=np.float64).reshape(-1, 3)
-    counts = np.asarray(counts)
-
-    hues = colors[:, 0]
-    saturations = colors[:, 1] / 255.0
-    values = colors[:, 2] / 255.0
-    angles = 2.0 * np.pi * hues / 180.0
-    color_features = np.column_stack(
-        (
-            np.cos(angles) * saturations * values,
-            np.sin(angles) * saturations * values,
-            values * 2.0,
-        )
+    reps, rep_counts = color_core.group_similar_colors(
+        np.ascontiguousarray(colors, dtype=np.uint8),
+        np.ascontiguousarray(counts, dtype=np.int64),
+        distance_threshold,
     )
-
-    grouped_counts = {}
-    representative_colors = []
-    spatial_buckets = {}
-    cell_size = (distance_threshold + 0.5) * math.sqrt(5.0) / 255.0
-    neighbor_offsets = tuple(
-        (hue_offset, saturation_offset, value_offset)
-        for hue_offset in (-1, 0, 1)
-        for saturation_offset in (-1, 0, 1)
-        for value_offset in (-1, 0, 1)
-    )
-
-    for color_values, count_value, color_feature in zip(
-        colors, counts, color_features
-    ):
-        color = tuple(map(int, color_values))
-        count = int(count_value)
-        matched_color = None
-        cell = tuple(
-            math.floor(feature_value / cell_size)
-            for feature_value in color_feature
-        )
-
-        for representative_index in spatial_buckets.get(cell, ()):
-            selected_color = representative_colors[representative_index]
-            if hsv_distance(color, selected_color) < distance_threshold:
-                matched_color = selected_color
-                break
-
-        if matched_color is not None:
-            grouped_counts[matched_color] += count
-        else:
-            grouped_counts[color] = count
-            representative_index = len(representative_colors)
-            representative_colors.append(color)
-            for offset in neighbor_offsets:
-                neighbor_cell = tuple(
-                    cell[axis] + offset[axis] for axis in range(3)
-                )
-                spatial_buckets.setdefault(neighbor_cell, []).append(
-                    representative_index
-                )
-
-    return grouped_counts
+    return {tuple(map(int, c)): int(n) for c, n in zip(reps, rep_counts)}
 
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
@@ -232,7 +197,8 @@ def load_pixels(file_path):
 
     
     
-    image = cv2.imread(str(file_path), cv2.IMREAD_COLOR)
+    image_data = np.fromfile(file_path, dtype=np.uint8)
+    image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"無法讀取圖片：{file_path}")
 
@@ -311,10 +277,6 @@ def pop_transition(sorted_colors, total_pixels, distance_threshold=12):
         if color not in excluded
     ]
 
-
-
-
-
 def pop_ringing(sorted_colors):
     pass
 
@@ -337,6 +299,5 @@ def point_to_segment_distance(C, A, B):
     distance = np.linalg.norm(C - projection)
 
     return distance, t, projection
-
 
 
