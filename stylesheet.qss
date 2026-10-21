@@ -1,0 +1,27 @@
+QPushButton {
+
+}
+
+QPushButton:hover {
+
+}
+
+QLineEdit{
+
+}
+
+QLabel{
+
+}
+
+QMessageBox{
+
+}
+
+QTableWidget{
+
+}
+
+QTableWidgetItem{
+
+}

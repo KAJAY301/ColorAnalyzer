@@ -1,11 +1,16 @@
 import math
 import os
 import sys
+from pathlib import Path
 
 import cv2
 import numpy as np
 
-def hsv_to_name(hsv_pixel):
+# Rust extension module for color analysis
+import color_core
+
+def hsv_to_name(hsv_color: tuple) -> str:
+    """Convert an HSV pixel to a color name in Chinese."""
     color_h_dist = {
         "紅色": 0,
         "橘色": 15,
@@ -20,7 +25,7 @@ def hsv_to_name(hsv_pixel):
         "洋紅色": 150,
         "玫瑰紅": 165,
     }
-    h, s, v = hsv_pixel
+    h, s, v = hsv_color
 
     # Black Gray White
     if v <= 30:
@@ -55,55 +60,22 @@ def hsv_to_name(hsv_pixel):
 
     return color_name
 
+def hsv_to_rgb(hsv_color: tuple) -> tuple:
+    """Convert an HSV color to RGB."""
+    hsv = np.uint8([[hsv_color]])
+    rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+    return tuple(map(int, rgb[0][0]))
+
 def count_color(pixels, all_color, batch_size=100000):
-    original_dtype = np.asarray(pixels).dtype
-    pixels = np.asarray(pixels, dtype=np.float32)
-    colors = np.asarray(list(all_color.keys()), dtype=np.float32)
+    if len(all_color) > 0:
+        keys = list(all_color.keys())
+        px = np.ascontiguousarray(pixels, dtype=np.uint8).reshape(-1, 3)
+        colors = np.asarray(keys, dtype=np.uint8).reshape(-1, 3)
+        result, counts = color_core.count_color(px, colors)
+        for key, n in zip(keys, counts):
+            all_color[key] = int(n)
+        return all_color, result
 
-    H_weight = 1.0
-    V_weight = 2.0
-
-    H = colors[:, 0]
-    S = colors[:, 1] / 255.0
-    V = colors[:, 2] / 255.0
-
-    angle = 2.0 * np.pi * H / 180.0
-
-    color_x = np.cos(angle) * S * V * H_weight
-    color_y = np.sin(angle) * S * V * H_weight
-    color_z = V * V_weight
-
-    result_pixels = np.empty(pixels.shape, dtype=original_dtype)
-    total_counts = np.zeros(len(colors), dtype=np.int64)
-
-    for start in range(0, len(pixels), batch_size):
-        end = min(start + batch_size, len(pixels))
-        batch = pixels[start:end]
-
-        H = batch[:, 0]
-        S = batch[:, 1] / 255.0
-        V = batch[:, 2] / 255.0
-
-        angle = 2.0 * np.pi * H / 180.0
-
-        pixel_x = np.cos(angle) * S * V * H_weight
-        pixel_y = np.sin(angle) * S * V * H_weight
-        pixel_z = V * V_weight
-
-        dx = pixel_x[:, None] - color_x[None, :]
-        dy = pixel_y[:, None] - color_y[None, :]
-        dz = pixel_z[:, None] - color_z[None, :]
-
-        distance = np.sqrt(dx * dx + dy * dy + dz * dz)
-        closest_index = np.argmin(distance, axis=1)
-
-        result_pixels[start:end] = colors[closest_index].astype(original_dtype)
-        total_counts += np.bincount(closest_index, minlength=len(colors))
-
-    for i, color in enumerate(all_color.keys()):
-        all_color[color] = int(total_counts[i])
-
-    return all_color, result_pixels
 
 def unique_color_counts(pixels):
     pixels = np.asarray(pixels, dtype=np.uint8).reshape(-1, 3)
@@ -122,8 +94,18 @@ def unique_color_counts(pixels):
     ).astype(np.uint8)
     return colors, counts
 
+def group_similar_colors(colors, counts, distance_threshold=20):
+    reps, rep_counts = color_core.group_similar_colors(
+        np.ascontiguousarray(colors, dtype=np.uint8),
+        np.ascontiguousarray(counts, dtype=np.int64),
+        distance_threshold,
+    )
+    return {tuple(map(int, c)): int(n) for c, n in zip(reps, rep_counts)}
+
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
+    file_path = Path(file_path)
+
     # PDF
     if file_path.suffix.lower() == ".pdf":
         import pymupdf
@@ -164,19 +146,11 @@ def load_pixels(file_path):
 
     
     
-    image = cv2.imread(str(file_path), cv2.IMREAD_COLOR)
+    image_data = np.fromfile(file_path, dtype=np.uint8)
+    image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"無法讀取圖片：{file_path}")
-    # JPG / JPEG
-    #if file_path.suffix.lower()  in (".jpg", ".jpeg"):
-    #    image = cv2.fastNlMeansDenoisingColored(
-    #        image,
-    #        None,
-    #        h=3,
-    #        hColor=5,
-    #        templateWindowSize=7,
-    #        searchWindowSize=21
-    #    )
+
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     pixels = hsv.reshape(-1, 3)
     return pixels, image
@@ -209,3 +183,70 @@ def resource_path(filename):
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     return os.path.join(base_path, filename)
+
+def pop_transition(sorted_colors, total_pixels, distance_threshold=12):
+    colors = list(sorted_colors)
+    excluded = set()
+
+    for i in range(len(colors) - 1, -1, -1):
+        candidate_hsv, candidate_count = colors[i]
+        if candidate_count >= 0.01 * total_pixels:
+            continue
+
+        candidate_rgb = hsv_to_rgb(candidate_hsv)
+        best_match = None
+
+        for j in range(i):
+            color_a_hsv, _ = colors[j]
+            color_a_rgb = hsv_to_rgb(color_a_hsv)
+
+            for k in range(j + 1, i):
+                color_b_hsv, _ = colors[k]
+                color_b_rgb = hsv_to_rgb(color_b_hsv)
+                distance, t, _ = point_to_segment_distance(
+                    candidate_rgb,
+                    color_a_rgb,
+                    color_b_rgb,
+                )
+
+                if 0 <= t <= 1 and distance <= distance_threshold:
+                    if best_match is None or distance < best_match[0]:
+                        best_match = (distance, j, k, t)
+
+        if best_match is not None:
+            _, j, k, t = best_match
+            excluded.add(candidate_hsv)
+            target_index = j if t < 0.5 else k
+            target_hsv, target_count = colors[target_index]
+            colors[target_index] = (target_hsv, target_count + candidate_count)
+
+    return [
+        (color, count)
+        for color, count in colors
+        if color not in excluded
+    ]
+
+def pop_ringing(sorted_colors):
+    pass
+
+def point_to_segment_distance(C, A, B):
+
+    C = np.asarray(C, dtype=np.float64)
+    A = np.asarray(A, dtype=np.float64)
+    B = np.asarray(B, dtype=np.float64)
+
+    AB = B - A
+    AB2 = np.dot(AB, AB)
+
+    if AB2 == 0:
+        return np.linalg.norm(C - A), 0.0, A
+
+    t = np.dot(C - A, AB) / AB2
+
+    projection = A + t * AB
+
+    distance = np.linalg.norm(C - projection)
+
+    return distance, t, projection
+
+

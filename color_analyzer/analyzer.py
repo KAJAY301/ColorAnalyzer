@@ -1,5 +1,3 @@
-import sys
-
 import cv2
 import numpy as np
 from PyQt5.QtCore import QSize, Qt
@@ -7,6 +5,7 @@ from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QFileDialog,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -17,11 +16,14 @@ from PyQt5.QtWidgets import (
 
 from .color_utils import (
     count_color,
-    hsv_distance,
     hsv_to_name,
     load_pixels,
     resource_path,
     unique_color_counts,
+    pop_transition,
+    pop_ringing, 
+    hsv_to_rgb,
+    group_similar_colors,
 )
 from .image_viewer import ImageViewer
 from .copyable_table import CopyableTableWidget
@@ -33,23 +35,10 @@ class ColorAnalyzer(QWidget):
 
         self.pixels = None
         self.showed_image = None
-
-        if image_path:
-            try:
-                pixels, image = load_pixels(image_path)
-            except Exception as error:
-                QMessageBox.critical(self, "錯誤", str(error))
-                sys.exit(1)
-
-            self.pixels = pixels
-            self.showed_image = image
-            self.image_height = image.shape[0]
-            self.image_width = image.shape[1]
-            self.original_image_height = image.shape[0]
-            self.original_image_width = image.shape[1]
-
         self.init_ui()
-        self.show_image(fixed_view=False)
+        self.set_file_loaded(False)
+        if image_path is not None:
+            self.load_image(image_path)
 
     def init_ui(self):
         self.setWindowTitle("Color Analyzer")
@@ -62,6 +51,8 @@ class ColorAnalyzer(QWidget):
         main_layout.addLayout(image_layout, 1)
 
         input_layout = QHBoxLayout()
+        self.open_file_button = QPushButton("選擇檔案")
+        self.open_file_button.clicked.connect(self.open_file)
         input_label = QLabel("顏色數量：")
 
         self.color_input = QLineEdit()
@@ -72,9 +63,14 @@ class ColorAnalyzer(QWidget):
         self.analyze_button.clicked.connect(self.analyze)
         self.color_input.returnPressed.connect(self.analyze_button.click)
 
+        self.auto_color_button = QPushButton("自動分析")
+        self.auto_color_button.clicked.connect(self.auto_analyze)
+
+        input_layout.addWidget(self.open_file_button)
         input_layout.addWidget(input_label)
         input_layout.addWidget(self.color_input)
         input_layout.addWidget(self.analyze_button)
+        input_layout.addWidget(self.auto_color_button)
         input_layout.addStretch()
         data_layout.addLayout(input_layout)
 
@@ -84,12 +80,12 @@ class ColorAnalyzer(QWidget):
         self.image_label = ImageViewer()
         tool_layout = QHBoxLayout()
 
-        select_button = QPushButton()
+        self.select_button = QPushButton()
         select_icon = QIcon(resource_path("resources/select.png"))
-        select_button.setIcon(select_icon)
-        select_button.setIconSize(QSize(29, 29))
-        select_button.setToolTip("Select")
-        select_button.setStyleSheet(
+        self.select_button.setIcon(select_icon)
+        self.select_button.setIconSize(QSize(29, 29))
+        self.select_button.setToolTip("Select")
+        self.select_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -100,16 +96,16 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        select_button.clicked.connect(
+        self.select_button.clicked.connect(
             lambda: self.image_label.set_roi_mode(True)
         )
 
-        rotate_button = QPushButton()
+        self.rotate_button = QPushButton()
         rotate_icon = QIcon(resource_path("resources/rotate.png"))
-        rotate_button.setIcon(rotate_icon)
-        rotate_button.setIconSize(QSize(29, 29))
-        rotate_button.setToolTip("Rotate")
-        rotate_button.setStyleSheet(
+        self.rotate_button.setIcon(rotate_icon)
+        self.rotate_button.setIconSize(QSize(29, 29))
+        self.rotate_button.setToolTip("Rotate")
+        self.rotate_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -120,14 +116,14 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        rotate_button.clicked.connect(self.rotate)
+        self.rotate_button.clicked.connect(self.rotate)
 
-        mirror_button = QPushButton()
+        self.mirror_button = QPushButton()
         mirror_icon = QIcon(resource_path("resources/mirror.png"))
-        mirror_button.setIcon(mirror_icon)
-        mirror_button.setIconSize(QSize(29, 29))
-        mirror_button.setToolTip("Mirror")
-        mirror_button.setStyleSheet(
+        self.mirror_button.setIcon(mirror_icon)
+        self.mirror_button.setIconSize(QSize(29, 29))
+        self.mirror_button.setToolTip("Mirror")
+        self.mirror_button.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
@@ -138,18 +134,57 @@ class ColorAnalyzer(QWidget):
             }
             """
         )
-        mirror_button.clicked.connect(self.mirror_horizontal)
+        self.mirror_button.clicked.connect(self.mirror_horizontal)
 
-        tool_layout.addWidget(select_button)
-        tool_layout.addWidget(rotate_button)
-        tool_layout.addWidget(mirror_button)
+        tool_layout.addWidget(self.select_button)
+        tool_layout.addWidget(self.rotate_button)
+        tool_layout.addWidget(self.mirror_button)
         tool_layout.addStretch()
 
         image_layout.addLayout(tool_layout)
         image_layout.addWidget(self.image_label)
         self.setLayout(main_layout)
 
+    def set_file_loaded(self, loaded):
+        self.analyze_button.setEnabled(loaded)
+        self.auto_color_button.setEnabled(loaded)
+        self.select_button.setEnabled(loaded)
+        self.rotate_button.setEnabled(loaded)
+        self.mirror_button.setEnabled(loaded)
+
+    def open_file(self):
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "選擇圖片或 PDF",
+            "",
+            "Images and PDFs (*.png *.jpg *.jpeg *.pdf)",
+        )
+        if selected_path:
+            self.load_image(selected_path)
+
+    def load_image(self, image_path):
+        try:
+            pixels, image = load_pixels(image_path)
+        except Exception as error:
+            QMessageBox.critical(self, "錯誤", str(error))
+            return
+
+        if self.image_label.roi.is_on:
+            self.image_label.set_roi_mode(False)
+
+        self.pixels = pixels
+        self.showed_image = image
+        self.image_height, self.image_width = image.shape[:2]
+        self.original_image_height, self.original_image_width = image.shape[:2]
+        self.color_input.clear()
+        self.table.setRowCount(0)
+        self.set_file_loaded(True)
+        self.show_image(fixed_view=False)
+
     def analyze(self):
+        if self.pixels is None:
+            return
+
         # Input
         text = self.color_input.text().strip()
         try:
@@ -188,23 +223,7 @@ class ColorAnalyzer(QWidget):
         colors = colors[order]
         counts = counts[order]
 
-        # Group colors that are close to each other
-        grouped_count = {}
-        for color, count in zip(colors, counts):
-            color = tuple(map(int, color))
-            count = int(count)
-            matched_color = None
-
-            for selected_color in grouped_count:
-                distance = hsv_distance(color, selected_color)
-                if distance < 20:
-                    matched_color = selected_color
-                    break
-
-            if matched_color is not None:
-                grouped_count[matched_color] += count
-            else:
-                grouped_count[color] = count
+        grouped_count = group_similar_colors(colors, counts)
         
         color_count = dict(
             sorted(
@@ -231,8 +250,127 @@ class ColorAnalyzer(QWidget):
         )
 
         # Update table
-        self.table.setRowCount(0)
+        self.update_table(sorted_colors, percentage_total)
 
+        cv2_hsv = result_pixels.reshape(
+            self.original_image_height,
+            self.original_image_width,
+            3,
+        )
+        cv2_bgr = cv2.cvtColor(cv2_hsv, cv2.COLOR_HSV2BGR)
+        self.showed_image = cv2_bgr
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image(fixed_view=True)
+
+    def auto_analyze(self):
+        if self.pixels is None:
+            return
+
+        sample_size = 10
+        if self.image_label.roi.is_on:
+            x1 = round(self.image_label.roi.left_offset)
+            x2 = round(self.image_label.roi.right_offset) + self.original_image_width
+            y1 = round(self.image_label.roi.top_offset)
+            y2 = round(self.image_label.roi.bottom_offset) + self.original_image_height
+        
+            x1 = max(0, min(x1, self.original_image_width))
+            x2 = max(0, min(x2, self.original_image_width))
+            y1 = max(0, min(y1, self.original_image_height))
+            y2 = max(0, min(y2, self.original_image_height))
+        
+            pixels_2d = self.pixels.reshape(
+                self.original_image_height,
+                self.original_image_width,
+                3,
+            )
+            roi_pixels = pixels_2d[y1:y2, x1:x2].reshape(-1, 3)
+            colors, counts = unique_color_counts(roi_pixels)
+        else:
+            colors, counts = unique_color_counts(self.pixels)
+
+        order = np.argsort(counts)[::-1]
+        colors = colors[order]
+        counts = counts[order]
+
+        grouped_count = group_similar_colors(colors, counts)
+        
+        color_count = dict(
+            sorted(
+                grouped_count.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:sample_size]
+        )
+
+        # Count colors
+        if self.image_label.roi.is_on:
+            color_count, _ = count_color(roi_pixels, color_count)
+            _, result_pixels = count_color(self.pixels, color_count.copy())
+            percentage_total = len(roi_pixels)
+        else:
+            color_count, result_pixels = count_color(self.pixels, color_count)
+            percentage_total = len(self.pixels)
+
+        # Sort colors by count
+        sorted_colors = sorted(
+            color_count.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+        cleaned_colors = pop_transition(sorted_colors, percentage_total)
+        cleanest_colors = pop_ringing(cleaned_colors)
+
+        self.update_table(cleaned_colors, percentage_total)
+
+        cv2_hsv = result_pixels.reshape(
+            self.original_image_height,
+            self.original_image_width,
+            3,
+        )
+        cv2_bgr = cv2.cvtColor(cv2_hsv, cv2.COLOR_HSV2BGR)
+        self.showed_image = cv2_bgr
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image(fixed_view=True)
+
+    def rotate(self):
+        if self.showed_image is None:
+            return
+
+        rotated_image = cv2.rotate(self.showed_image, cv2.ROTATE_90_CLOCKWISE)
+        self.showed_image = rotated_image
+        self.image_height = self.showed_image.shape[0]
+        self.image_width = self.showed_image.shape[1]
+        self.show_image()
+
+    def mirror_horizontal(self):
+        if self.showed_image is None:
+            return
+
+        mirrored_image = cv2.flip(self.showed_image, 1)
+        self.showed_image = mirrored_image
+        self.show_image()
+
+    def show_image(self, fixed_view=True):
+        if self.showed_image is None:
+            return
+
+        result_bgr = np.ascontiguousarray(self.showed_image)
+        qimage = QImage(
+            result_bgr.data,
+            self.image_width,
+            self.image_height,
+            result_bgr.strides[0],
+            QImage.Format_BGR888,
+        ).copy()
+
+        pixmap = QPixmap.fromImage(qimage)
+        self.image_label.set_image(pixmap, fixed_view=fixed_view)
+
+    def update_table(self, sorted_colors, percentage_total):
+        self.table.setRowCount(0)
         name_count = {}
         for color, count in sorted_colors:
             name = hsv_to_name(color)
@@ -249,7 +387,7 @@ class ColorAnalyzer(QWidget):
             self.table.insertRow(row)
 
             color_widget = QWidget()
-            rgb = self.hsv_to_rgb(color)
+            rgb = hsv_to_rgb(color)
             color_widget.setStyleSheet(
                 f"background-color: rgb({rgb[0]},{rgb[1]},{rgb[2]});"
             )
@@ -266,45 +404,3 @@ class ColorAnalyzer(QWidget):
             count_item = QTableWidgetItem(str(count))
             count_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 3, count_item)
-
-        cv2_hsv = result_pixels.reshape(
-            self.original_image_height,
-            self.original_image_width,
-            3,
-        )
-        cv2_bgr = cv2.cvtColor(cv2_hsv, cv2.COLOR_HSV2BGR)
-        self.showed_image = cv2_bgr
-        self.image_height = self.showed_image.shape[0]
-        self.image_width = self.showed_image.shape[1]
-        self.show_image(fixed_view=True)
-
-    def rotate(self):
-        rotated_image = cv2.rotate(self.showed_image, cv2.ROTATE_90_CLOCKWISE)
-        self.showed_image = rotated_image
-        self.image_height = self.showed_image.shape[0]
-        self.image_width = self.showed_image.shape[1]
-        self.show_image()
-
-    def mirror_horizontal(self):
-        mirrored_image = cv2.flip(self.showed_image, 1)
-        self.showed_image = mirrored_image
-        self.show_image()
-
-    def show_image(self, fixed_view=True):
-        result_bgr = np.ascontiguousarray(self.showed_image)
-        qimage = QImage(
-            result_bgr.data,
-            self.image_width,
-            self.image_height,
-            result_bgr.strides[0],
-            QImage.Format_BGR888,
-        ).copy()
-
-        pixmap = QPixmap.fromImage(qimage)
-        self.image_label.set_image(pixmap, fixed_view=fixed_view)
-
-    @staticmethod
-    def hsv_to_rgb(hsv_color):
-        hsv = np.uint8([[hsv_color]])
-        rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
-        return tuple(map(int, rgb[0][0]))

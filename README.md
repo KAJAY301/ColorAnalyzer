@@ -24,26 +24,31 @@ Color Analyzer is a desktop application that reads an image or PDF file and iden
 
 ## Installation
 
-1. Create and activate a virtual environment if needed.
-2. Install the dependencies:
+1. Install Rust and create and activate a Python virtual environment.
+2. Install the Python dependencies and Maturin:
+3. Build and install the native Rust extension:
 
 ```bash
 pip install -r requirements.txt
+pip install maturin
+cd color_core
+maturin develop --release
+cd ..
 ```
 
 ## Usage
 
-Run the application with a file path:
+Start the application and choose a file using the **選擇檔案** button. You can use the same button later to switch to another image or PDF.
+
+```bash
+python main.py
+```
+
+You can also open a file directly by passing its path:
 
 ```bash
 python main.py image.png
 python main.py document.pdf
-```
-
-On Windows, you can also use:
-
-```bat
-run.bat image.png
 ```
 
 Then enter the number of colors to analyze in the GUI and click the analysis button.
@@ -61,18 +66,15 @@ The application converts the input image (or each PDF page) to HSV color space, 
 ## Notes
 
 - For PDF files, all pages are combined before the color count is calculated.
-- The script expects the path to a real file. If the file does not exist, it will exit with an error.
+- If a selected file cannot be read, the app displays an error and remains open so you can choose another file.
 - The app is intended for local desktop use and requires a graphical session.
 
 ## Project Structure
 
-- main.py — application entry point
-- color_analyzer/ — application modules
-  - analyzer.py — main window and analysis workflow
-  - color_utils.py — color processing and image/PDF loading
-  - widgets.py — image viewer and copyable table widgets
-- resources/ — toolbar icons
-- requirements.txt — Python dependencies
-- run.bat — Windows shortcut for launching the app
-- ColorAnalyzer.spec — PyInstaller build configuration
-
+- `main.py` — application entry point
+- `color_analyzer/` — GUI and image/color processing modules
+- `color_core/` — Rust extension for performance-critical color processing
+- `resources/` — toolbar icons
+- `stylesheet.qss` — application stylesheet
+- `requirements.txt` — Python runtime dependencies
+- `ColorAnalyzer.spec` — PyInstaller build configuration
