@@ -25,9 +25,8 @@ from .color_utils import (
     hsv_to_rgb,
     group_similar_colors,
 )
-from .image_viewer import ImageViewer
-from .copyable_table import CopyableTableWidget
-
+from .ui.image_viewer import ImageViewer
+from .ui.copyable_table import CopyableTableWidget
 
 class ColorAnalyzer(QWidget):
     def __init__(self, image_path=None):

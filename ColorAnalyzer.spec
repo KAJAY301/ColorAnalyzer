@@ -25,7 +25,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ColorAnalyzer0.2',
+    name='ColorAnalyzer0.3',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
