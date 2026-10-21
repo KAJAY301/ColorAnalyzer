@@ -60,13 +60,16 @@ def hsv_to_name(hsv_color: tuple) -> str:
 
     return color_name
 
+
 def hsv_to_rgb(hsv_color: tuple) -> tuple:
     """Convert an HSV color to RGB."""
     hsv = np.uint8([[hsv_color]])
     rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
     return tuple(map(int, rgb[0][0]))
 
-def count_color(pixels, all_color, batch_size=100000):
+
+def count_color(pixels, all_color):
+    """Count the occurrences of each color in the given pixels."""
     if len(all_color) > 0:
         keys = list(all_color.keys())
         px = np.ascontiguousarray(pixels, dtype=np.uint8).reshape(-1, 3)
@@ -94,6 +97,7 @@ def unique_color_counts(pixels):
     ).astype(np.uint8)
     return colors, counts
 
+
 def group_similar_colors(colors, counts, distance_threshold=20):
     reps, rep_counts = color_core.group_similar_colors(
         np.ascontiguousarray(colors, dtype=np.uint8),
@@ -101,6 +105,7 @@ def group_similar_colors(colors, counts, distance_threshold=20):
         distance_threshold,
     )
     return {tuple(map(int, c)): int(n) for c, n in zip(reps, rep_counts)}
+
 
 def load_pixels(file_path):
     """Load a JPG, PNG, or PDF and return its HSV pixels and BGR display image."""
@@ -155,6 +160,7 @@ def load_pixels(file_path):
     pixels = hsv.reshape(-1, 3)
     return pixels, image
 
+
 def hsv_distance(point_a, point_b) -> float:
     """Calculate distance between two HSV colors using a cone-shaped model."""
     H1, S1, V1 = map(int, point_a)
@@ -176,6 +182,7 @@ def hsv_distance(point_a, point_b) -> float:
     distance = math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
     return round(distance / weight * 255)
 
+
 def resource_path(filename):
     if getattr(sys, "frozen", False):
         base_path = sys._MEIPASS
@@ -183,6 +190,7 @@ def resource_path(filename):
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     return os.path.join(base_path, filename)
+
 
 def pop_transition(sorted_colors, total_pixels, distance_threshold=12):
     colors = list(sorted_colors)
@@ -226,8 +234,10 @@ def pop_transition(sorted_colors, total_pixels, distance_threshold=12):
         if color not in excluded
     ]
 
+
 def pop_ringing(sorted_colors):
     pass
+
 
 def point_to_segment_distance(C, A, B):
 

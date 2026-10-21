@@ -87,18 +87,20 @@ fn count_color<'py>(
     colors: PyReadonlyArray2<'py, u8>,
 ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<i64>>)> {
     if pixels.shape()[1] != 3 || colors.shape()[1] != 3 {
-        return Err(PyValueError::new_err("pixels 與 colors 都必須是 (N,3)"));
+        return Err(PyValueError::new_err(
+            "pixels and colors must both have shape (N, 3)",
+        ));
     }
     let k = colors.shape()[0];
     if k == 0 {
-        return Err(PyValueError::new_err("colors 不可為空"));
+        return Err(PyValueError::new_err("colors must not be empty"));
     }
     let px = pixels
         .as_slice()
-        .map_err(|_| PyValueError::new_err("pixels 必須是連續陣列(C-contiguous)"))?;
+        .map_err(|_| PyValueError::new_err("pixels must be a contiguous array (C-contiguous)"))?;
     let n = px.len() / 3;
 
-    // 每個色相 0..255 的 cos / sin 查表(與 numpy float32 的運算順序一致)
+    // Precompute cosine and sine for hue values 0..255, matching NumPy float32 operation order.
     let mut cos_tab = [0f32; 256];
     let mut sin_tab = [0f32; 256];
     for h in 0..256usize {
@@ -117,7 +119,7 @@ fn count_color<'py>(
         ]
     };
 
-    // 代表色的特徵與原始 HSV
+    // Store the feature vectors and original HSV values for the representative colors.
     let cview = colors.as_array();
     let mut rep_feat: Vec<[f32; 3]> = Vec::with_capacity(k);
     let mut rep_hsv: Vec<[u8; 3]> = Vec::with_capacity(k);
@@ -128,7 +130,7 @@ fn count_color<'py>(
     }
 
     let mut out = vec![0u8; n * 3];
-    const CHUNK: usize = 16_384; // 每個工作單位的像素數
+    const CHUNK: usize = 16_384; // Number of pixels per work unit.
 
     let counts: Vec<i64> = py.allow_threads(|| {
         px.par_chunks(CHUNK * 3)
@@ -144,7 +146,7 @@ fn count_color<'py>(
                             let dx = f[0] - r[0];
                             let dy = f[1] - r[1];
                             let dz = f[2] - r[2];
-                            let d = dx * dx + dy * dy + dz * dz; // 不需要 sqrt,不影響大小比較
+                            let d = dx * dx + dy * dy + dz * dz; // Comparing squared distances avoids sqrt.
                             if d < best_d {
                                 best_d = d;
                                 best = j;
