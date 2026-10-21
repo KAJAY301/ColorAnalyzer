@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from PyQt5.QtCore import Qt, QRect, QPoint
+from PyQt5.QtCore import Qt, QRect, QRectF, QPoint
 from PyQt5.QtGui import QPainter, QPen, QColor, QPixmap
 from PyQt5.QtWidgets import QLabel
 
@@ -46,7 +46,8 @@ class ImageViewer(QLabel):
         self.image = ImageState()
         self.roi = ROIState()
         self.mouse = MouseState()
-        self.pixmap_scaled = None
+        self.scaled_w = 0
+        self.scaled_h = 0
 
     def set_roi_mode(self, toggle):
         if not self.roi.is_on:
@@ -55,10 +56,10 @@ class ImageViewer(QLabel):
             self.roi.is_on = False
 
         if self.roi.is_on:
-            self.roi.start = QPoint(self.x, self.y)
+            self.roi.start = QPoint(self.img_x, self.img_y)
             self.roi.end = QPoint(
-                int(-self.x + self.width() + 2 * self.image.offset_x),
-                int(-self.y + self.height() + 2 * self.image.offset_y),
+                int(-self.img_x + self.width() + 2 * self.image.offset_x),
+                int(-self.img_y + self.height() + 2 * self.image.offset_y),
             )
             self.roi.left_offset = 0
             self.roi.top_offset = 0
@@ -308,22 +309,35 @@ class ImageViewer(QLabel):
             painter.end()
 
     def update_image(self):
-        if self.image.pixmap_original is None or self.pixmap_scaled is None:
+        if self.image.pixmap_original is None or self.scaled_w == 0:
             return
 
         canvas = QPixmap(self.size())
         canvas.fill(Qt.lightGray)
 
-        painter = QPainter(canvas)
-        self.x = int(
-            (self.width() - self.pixmap_scaled.width()) // 2 + self.image.offset_x
+        self.img_x = int(
+            (self.width() - self.scaled_w) // 2 + self.image.offset_x
         )
-        self.y = int(
-            (self.height() - self.pixmap_scaled.height()) // 2 + self.image.offset_y
+        self.img_y = int(
+            (self.height() - self.scaled_h) // 2 + self.image.offset_y
         )
 
-        painter.drawPixmap(self.x, self.y, self.pixmap_scaled)
-        painter.end()
+        visible = QRect(self.img_x, self.img_y, self.scaled_w, self.scaled_h).intersected(
+            QRect(0, 0, self.width(), self.height())
+        )
+
+        if not visible.isEmpty():
+            scale = self.image.scale
+            source = QRectF(
+                (visible.left() - self.img_x) / scale,
+                (visible.top() - self.img_y) / scale,
+                visible.width() / scale,
+                visible.height() / scale,
+            ).intersected(QRectF(self.image.pixmap_original.rect()))
+
+            painter = QPainter(canvas)
+            painter.drawPixmap(QRectF(visible), self.image.pixmap_original, source)
+            painter.end()
 
         self.setPixmap(canvas)
         self.update_roi()
@@ -332,10 +346,11 @@ class ImageViewer(QLabel):
         if self.image.pixmap_original is None:
             return
 
-        self.pixmap_scaled = self.image.pixmap_original.scaled(
-            self.image.pixmap_original.size() * self.image.scale,
-            Qt.KeepAspectRatio,
-            Qt.FastTransformation,
+        self.scaled_w = max(
+            1, round(self.image.pixmap_original.width() * self.image.scale)
+        )
+        self.scaled_h = max(
+            1, round(self.image.pixmap_original.height() * self.image.scale)
         )
 
     def update_roi(self):
@@ -343,18 +358,18 @@ class ImageViewer(QLabel):
             return
 
         self.roi.start = QPoint(
-            int(self.x + round(self.roi.left_offset) * self.image.scale),
-            int(self.y + round(self.roi.top_offset) * self.image.scale),
+            int(self.img_x + round(self.roi.left_offset) * self.image.scale),
+            int(self.img_y + round(self.roi.top_offset) * self.image.scale),
         )
         self.roi.end = QPoint(
             int(
-                self.x
-                + self.pixmap_scaled.width()
+                self.img_x
+                + self.scaled_w
                 + round(self.roi.right_offset) * self.image.scale
             ),
             int(
-                self.y
-                + self.pixmap_scaled.height()
+                self.img_y
+                + self.scaled_h
                 + round(self.roi.bottom_offset) * self.image.scale
             ),
         )
