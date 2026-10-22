@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QSplitter
 )
 
 from .color_utils import (
@@ -46,8 +47,22 @@ class ColorAnalyzer(QWidget):
         main_layout = QHBoxLayout()
         data_layout = QVBoxLayout()
         image_layout = QVBoxLayout()
-        main_layout.addLayout(data_layout, 1)
-        main_layout.addLayout(image_layout, 1)
+
+        data_widget = QWidget()
+        data_widget.setLayout(data_layout)
+        image_widget = QWidget()
+        image_widget.setLayout(image_layout)
+
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(data_widget)
+        self.splitter.addWidget(image_widget)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(6)
+        main_layout.addWidget(self.splitter)
+        #main_layout.addLayout(data_layout, 1)
+        #main_layout.addLayout(image_layout, 1)
 
         input_layout = QHBoxLayout()
         self.open_file_button = QPushButton("選擇檔案")
@@ -142,7 +157,9 @@ class ColorAnalyzer(QWidget):
 
         image_layout.addLayout(tool_layout)
         image_layout.addWidget(self.image_label)
+
         self.setLayout(main_layout)
+        self.splitter.setSizes([self.width() // 2, self.width() // 2])
 
     def set_file_loaded(self, loaded):
         self.analyze_button.setEnabled(loaded)

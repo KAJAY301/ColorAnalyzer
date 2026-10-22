@@ -1,3 +1,7 @@
+QWidget {
+
+}
+
 QPushButton {
 
 }
@@ -6,22 +10,98 @@ QPushButton:hover {
 
 }
 
-QLineEdit{
+QPushButton:pressed {
 
 }
 
-QLabel{
+QPushButton:disabled {
 
 }
 
-QMessageBox{
+QLineEdit {
 
 }
 
-QTableWidget{
+QLineEdit:focus {
 
 }
 
-QTableWidgetItem{
+QLineEdit:disabled {
+
+}
+
+QLabel {
+
+}
+
+QTableWidget {
+
+}
+
+QTableWidget::item {
+
+}
+
+QTableWidget::item:hover {
+
+}
+
+QHeaderView::section {
+
+}
+
+QTableCornerButton::section {
+
+}
+
+QMessageBox {
+
+}
+
+QToolTip {
+
+}
+
+QScrollBar:vertical {
+
+}
+
+QScrollBar::handle:vertical {
+
+}
+
+QScrollBar::handle:vertical:hover {
+
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+
+}
+
+QScrollBar:horizontal {
+
+}
+
+QScrollBar::handle:horizontal {
+
+}
+
+QScrollBar::handle:horizontal:hover {
+
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
 
 }
