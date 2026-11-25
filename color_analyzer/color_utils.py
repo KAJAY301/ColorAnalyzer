@@ -260,44 +260,23 @@ def point_to_segment_distance(C, A, B):
     return distance, t, projection
 
 
-def find_background_color(result_pixels: np.ndarray):
-    """
-    Find the most likely background color using bounding boxes.
+def find_background_color(pixels, colors, width):
+    """Find the background color using bounding boxes."""
+    if len(colors) == 0:
+        return None
 
-    Args:
-        result_pixels: HSV image, shape (H, W, 3)
-
-    Returns:
-        background_color: tuple (H, S, V)
-        scores: dict containing statistics for each color
-    """
-    height, width = result_pixels.shape[:2]
-
-    pixels = result_pixels.reshape(-1, 3)
-
-    colors, inverse = np.unique(
+    px = np.ascontiguousarray(
         pixels,
-        axis=0,
-        return_inverse=True,
+        dtype=np.uint8,
+    ).reshape(-1, 3)
+
+    colors = np.ascontiguousarray(
+        colors,
+        dtype=np.uint8,
+    ).reshape(-1, 3)
+
+    return color_core.find_background_color(
+        px,
+        colors,
+        width,
     )
-
-    n = len(colors)
-
-    y, x = np.divmod(np.arange(len(pixels)), width)
-
-    min_x = np.full(n, width, dtype=np.int32)
-    min_y = np.full(n, height, dtype=np.int32)
-    max_x = np.zeros(n, dtype=np.int32)
-    max_y = np.zeros(n, dtype=np.int32)
-
-    np.minimum.at(min_x, inverse, x)
-    np.minimum.at(min_y, inverse, y)
-    np.maximum.at(max_x, inverse, x)
-    np.maximum.at(max_y, inverse, y)
-
-    bbox_area = (
-        (max_x - min_x + 1) *
-        (max_y - min_y + 1)
-    )
-
-    return colors[np.argmax(bbox_area)]

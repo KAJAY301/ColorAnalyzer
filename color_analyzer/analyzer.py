@@ -25,10 +25,10 @@ from .color_utils import (
     pop_ringing, 
     hsv_to_rgb,
     group_similar_colors,
+    find_background_color,
 )
 from .ui.image_viewer import ImageViewer
 from .ui.copyable_table import CopyableTableWidget
-from color_core import find_background_color
 
 class ColorAnalyzer(QWidget):
     def __init__(self, image_path=None):
