@@ -174,6 +174,110 @@ fn count_color<'py>(
     Ok((result.into_pyarray(py), PyArray1::from_vec(py, counts)))
 }
 
+
+#[pyfunction]
+fn find_background_color<'py>(
+    pixels: PyReadonlyArray2<'py, u8>,
+    colors: PyReadonlyArray2<'py, u8>,
+    width: usize,
+) -> PyResult<(u8, u8, u8)> {
+    if pixels.shape()[1] != 3 || colors.shape()[1] != 3 {
+        return Err(PyValueError::new_err(
+            "pixels and colors must both have shape (N, 3)",
+        ));
+    }
+
+    let px = pixels
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("pixels must be contiguous"))?;
+
+    let color_view = colors.as_array();
+
+    let n = px.len() / 3;
+    let k = colors.shape()[0];
+
+    if n == 0 || width == 0 || n % width != 0 {
+        return Err(PyValueError::new_err("Invalid image dimensions"));
+    }
+
+    if k == 0 {
+        return Err(PyValueError::new_err("colors must not be empty"));
+    }
+
+    let height = n / width;
+
+    // Pack HSV into a single u32 for fast comparison.
+    let pack = |h: u8, s: u8, v: u8| -> u32 {
+        ((h as u32) << 16) | ((s as u32) << 8) | (v as u32)
+    };
+
+    // Build sorted color lookup table.
+    let mut lookup: Vec<(u32, usize)> = (0..k)
+        .map(|i| {
+            (
+                pack(
+                    color_view[[i, 0]],
+                    color_view[[i, 1]],
+                    color_view[[i, 2]],
+                ),
+                i,
+            )
+        })
+        .collect();
+
+    lookup.sort_unstable_by_key(|entry| entry.0);
+
+    // Bounding box storage.
+    let mut min_x = vec![width; k];
+    let mut min_y = vec![height; k];
+    let mut max_x = vec![0usize; k];
+    let mut max_y = vec![0usize; k];
+
+    // Scan every pixel exactly once.
+    for (i, p) in px.chunks_exact(3).enumerate() {
+        let key = pack(p[0], p[1], p[2]);
+
+        let pos = lookup
+            .binary_search_by_key(&key, |entry| entry.0)
+            .map_err(|_| PyValueError::new_err(
+                "Pixel color not found in candidates"
+            ))?;
+
+        let color_idx = lookup[pos].1;
+
+        let x = i % width;
+        let y = i / width;
+
+        min_x[color_idx] = min_x[color_idx].min(x);
+        min_y[color_idx] = min_y[color_idx].min(y);
+
+        max_x[color_idx] = max_x[color_idx].max(x);
+        max_y[color_idx] = max_y[color_idx].max(y);
+    }
+
+    // Find the largest bounding box.
+    let mut best_idx = 0;
+    let mut best_area = 0usize;
+
+    for i in 0..k {
+        let bbox_area =
+            (max_x[i] - min_x[i] + 1) *
+            (max_y[i] - min_y[i] + 1);
+
+        if bbox_area > best_area {
+            best_area = bbox_area;
+            best_idx = i;
+        }
+    }
+
+    Ok((
+        color_view[[best_idx, 0]],
+        color_view[[best_idx, 1]],
+        color_view[[best_idx, 2]],
+    ))
+}
+
+
 #[pyfunction]
 #[pyo3(signature = (colors, counts, distance_threshold=20))]
 fn group_similar_colors<'py>(
@@ -209,6 +313,7 @@ fn group_similar_colors<'py>(
 #[pymodule]
 fn color_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(group_similar_colors, m)?)?;
+    m.add_function(wrap_pyfunction!(find_background_color, m)?)?;
     m.add_function(wrap_pyfunction!(count_color, m)?)?;
     Ok(())
 }

@@ -28,6 +28,7 @@ from .color_utils import (
 )
 from .ui.image_viewer import ImageViewer
 from .ui.copyable_table import CopyableTableWidget
+from color_core import find_background_color
 
 class ColorAnalyzer(QWidget):
     def __init__(self, image_path=None):
@@ -251,12 +252,27 @@ class ColorAnalyzer(QWidget):
 
         # Count colors
         if self.image_label.roi.is_on:
-            color_count, _ = count_color(roi_pixels, color_count)
+            color_count, roi_result_pixels = count_color(roi_pixels, color_count)
             _, result_pixels = count_color(self.pixels, color_count.copy())
             percentage_total = len(roi_pixels)
+            roi_width = x2 - x1
         else:
             color_count, result_pixels = count_color(self.pixels, color_count)
             percentage_total = len(self.pixels)
+            roi_result_pixels = result_pixels
+            roi_width = self.original_image_width
+
+        # Find background color
+        candidate_colors = np.asarray(
+            list(color_count.keys()),
+            dtype=np.uint8,
+        )
+
+        background_color = find_background_color(
+            roi_result_pixels,
+            candidate_colors,
+            roi_width,
+        )
 
         # Sort colors by count
         sorted_colors = sorted(
@@ -266,8 +282,9 @@ class ColorAnalyzer(QWidget):
         )
 
         # Update table
-        self.update_table(sorted_colors, percentage_total)
-
+        self.update_table(sorted_colors, percentage_total, background_color)
+        
+        # Image show
         cv2_hsv = result_pixels.reshape(
             self.original_image_height,
             self.original_image_width,
@@ -339,6 +356,7 @@ class ColorAnalyzer(QWidget):
         cleanest_colors = pop_ringing(cleaned_colors)
 
         self.update_table(cleaned_colors, percentage_total)
+        find_background_color()
 
         cv2_hsv = result_pixels.reshape(
             self.original_image_height,
@@ -385,11 +403,15 @@ class ColorAnalyzer(QWidget):
         pixmap = QPixmap.fromImage(qimage)
         self.image_label.set_image(pixmap, fixed_view=fixed_view)
 
-    def update_table(self, sorted_colors, percentage_total):
+    def update_table(self, sorted_colors, percentage_total, background_color):
         self.table.setRowCount(0)
         name_count = {}
         for color, count in sorted_colors:
-            name = hsv_to_name(color)
+            if color == background_color:
+                name = "底色"
+            else:
+                name = hsv_to_name(color)
+
             if name in name_count:
                 name_count[name] += 1
                 display_name = f"{name}{name_count[name]}"
